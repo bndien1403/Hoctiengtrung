@@ -142,6 +142,10 @@ a.btn { text-decoration: none; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 13px; font-weight: 700; color: var(--muted); }
 .input { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 11px 13px; font-size: 16px; }
+.masked { -webkit-text-security: disc; text-security: disc; }
+.pw-wrap { position: relative; }
+.pw-wrap .input { padding-right: 52px; }
+.pw-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 40px; border: 0; background: transparent; font-size: 18px; border-radius: 10px; }
 .input:focus { outline: 2px solid var(--jade); outline-offset: 0; border-color: transparent; }
 
 /* ---------- home ---------- */
@@ -372,9 +376,9 @@ details.box summary { font-weight: 700; cursor: pointer; }
 <div id="sheet-root"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 <input type="file" id="rec-input" accept="audio/*" capture hidden>
-<script src="config.js?v=202610271056"></script>
-<script src="platform.js?v=202610271056"></script>
-<script>window.HN_VERSION="202610271056";
+<script src="config.js?v=202610271939"></script>
+<script src="platform.js?v=202610271939"></script>
+<script>window.HN_VERSION="202610271939";
 'use strict';
 /* ================= tiện ích ================= */
 const $ = (s, r = document) => r.querySelector(s);
@@ -748,6 +752,12 @@ function playBtn(text, cls = '', lang = 'zh') { return `<button class="play ${cl
 function levelLabel(lv) { return lv ? `HSK ${lv}` : ''; }
 function stateDot(s) { const st = SRS.state(s); return `<span class="state-dot ${st === 'new' ? '' : st}" title="${{ new: 'Chưa học', learn: 'Đang học', known: 'Đã thuộc', weak: 'Hay quên' }[st]}"></span>`; }
 
+/* ---------- ô nhập không cho trình duyệt gợi ý / lưu mật khẩu ---------- */
+const NOAUTO = 'autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"';
+function plainField(id, attrs = '') { return `<input id="${id}" name="hn_${id}_${randId(4)}" class="input" type="text" ${NOAUTO} ${attrs}>`; }
+function pwField(id, attrs = '') { return `<div class="pw-wrap"><input id="${id}" name="hn_${id}_${randId(4)}" class="input masked" type="text" ${NOAUTO} ${attrs}><button type="button" class="pw-eye" data-act="pweye" data-for="${id}" aria-label="Hiện hoặc ẩn">👁</button></div>`; }
+ACT.pweye = (d, el) => { const i = document.getElementById(d.for); if (!i) return; const show = i.classList.toggle('masked') === false; el.textContent = show ? '🙈' : '👁'; i.focus(); };
+
 /* ================= đăng nhập / tạo tài khoản ================= */
 let authMode = 'login', authAv = '🐲', authU = '', authErr = '', pinTries = 0, pinLock = 0;
 VIEWS.auth = () => {
@@ -759,13 +769,13 @@ VIEWS.auth = () => {
   let body;
   if (authMode === 'login') {
     body = `<div class="field"><label>Chọn tài khoản của bạn</label><div class="list">${accs.length ? accs.map(([u, a]) => `<button class="li" data-act="auth-pick" data-u="${esc(u)}"><span class="avatar">${esc(a.av)}</span><span class="grow"><span class="lt">${esc(a.name)}</span><br><span class="small muted">@${esc(u)}</span></span><span class="chev">${authU === u ? '●' : '›'}</span></button>`).join('') : '<p class="li muted">Chưa có tài khoản nào.</p>'}</div></div>
-      ${authU ? `<form class="stack" data-form="login"><div class="field"><label for="pin">Mã PIN của @${esc(authU)}</label><input id="pin" class="input num" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" placeholder="4–6 chữ số" required></div><button class="btn primary block" type="submit">Vào học</button></form>` : ''}`;
+      ${authU ? `<form class="stack" data-form="login" autocomplete="off"><div class="field"><label for="pin">Mã PIN của @${esc(authU)}</label>${pwField('pin', 'inputmode="numeric" maxlength="6" placeholder="4–6 chữ số" required')}</div><button class="btn primary block" type="submit">Vào học</button></form>` : ''}`;
   } else {
     body = full ? `<div class="notice">Nhóm đã đủ ${MAX_MEMBERS} thành viên. Chủ nhóm có thể xoá bớt tài khoản trong Cài đặt.</div>` :
-      `<form class="stack" data-form="register">
-        <div class="field"><label for="r-name">Tên hiển thị</label><input id="r-name" class="input" maxlength="24" placeholder="Ví dụ: Minh Anh" required></div>
-        <div class="field"><label for="r-user">Tên đăng nhập</label><input id="r-user" class="input" maxlength="16" autocapitalize="none" autocomplete="username" placeholder="chữ thường, số, gạch dưới" pattern="[a-z0-9_]{3,16}" required></div>
-        <div class="field"><label for="r-pin">Mã PIN (4–6 chữ số)</label><input id="r-pin" class="input num" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="[0-9]{4,6}" required></div>
+      `<form class="stack" data-form="register" autocomplete="off">
+        <div class="field"><label for="r-name">Tên hiển thị</label>${plainField('r-name', 'autocapitalize="words" maxlength="24" placeholder="Ví dụ: Minh Anh" required')}</div>
+        <div class="field"><label for="r-user">Tên đăng nhập</label>${plainField('r-user', 'maxlength="16" placeholder="chữ thường, số, gạch dưới" pattern="[a-z0-9_]{3,16}" required')}</div>
+        <div class="field"><label for="r-pin">Mã PIN (4–6 chữ số)</label>${pwField('r-pin', 'inputmode="numeric" maxlength="6" pattern="[0-9]{4,6}" required')}</div>
         <div class="field"><label>Chọn con giáp làm ảnh đại diện</label><div class="zodiac">${ZODIAC.map(([e, z]) => `<button type="button" class="${authAv === e ? 'on' : ''}" data-act="auth-av" data-e="${e}">${e}<small>${z}</small></button>`).join('')}</div></div>
         <button class="btn primary block" type="submit">Tạo tài khoản</button>
         <p class="small muted">Nhóm tối đa ${MAX_MEMBERS} người · còn ${MAX_MEMBERS - accs.length} chỗ.</p>
@@ -836,20 +846,20 @@ function authFB() {
   const g = S.group; const full = g && (g.members || 0) >= (g.max || MAX_MEMBERS);
   const tabs = `<div class="seg" role="tablist"><button class="${authMode === 'login' ? 'on' : ''}" data-act="auth-mode" data-m="login">Đăng nhập</button><button class="${authMode === 'register' ? 'on' : ''}" data-act="auth-mode" data-m="register">${g ? 'Tạo tài khoản' : 'Lập nhóm mới'}</button></div>`;
   let body;
-  if (authMode === 'login') body = `<form class="stack" data-form="fblogin">
-      <div class="field"><label for="l-user">Tên đăng nhập</label><input id="l-user" class="input" autocapitalize="none" autocomplete="username" maxlength="16" required value="${esc(LS.get('lastUser', ''))}"></div>
-      <div class="field"><label for="l-pw">Mật khẩu</label><input id="l-pw" class="input" type="password" autocomplete="current-password" required></div>
+  if (authMode === 'login') body = `<form class="stack" data-form="fblogin" autocomplete="off">
+      <div class="field"><label for="l-user">Tên đăng nhập</label>${plainField('l-user', `maxlength="16" required value="${esc(LS.get('lastUser', ''))}"`)}</div>
+      <div class="field"><label for="l-pw">Mật khẩu</label>${pwField('l-pw', 'required')}</div>
       <button class="btn primary block" type="submit" ${fbBusy ? 'disabled' : ''}>${fbBusy ? 'Đang đăng nhập…' : 'Vào học'}</button>
       <p class="tiny muted">Quên mật khẩu? Nhờ chủ nhóm xoá tài khoản cũ để bạn đăng ký lại.</p></form>`;
   else if (full) body = `<div class="notice">Nhóm “${esc(g.name || '')}” đã đủ ${g.max || MAX_MEMBERS} thành viên.</div>`;
-  else body = `<form class="stack" data-form="fbregister">
+  else body = `<form class="stack" data-form="fbregister" autocomplete="off">
       ${g ? `<div class="notice info small">Nhóm “${esc(g.name || 'Hán Ngữ Cùng Nhau')}” · ${g.members || 0}/${g.max || MAX_MEMBERS} thành viên. Hỏi chủ nhóm để lấy <b>mã mời</b>.</div>
-        <div class="field"><label for="r-invite">Mã mời</label><input id="r-invite" class="input num" maxlength="8" autocapitalize="characters" autocomplete="off" placeholder="Ví dụ: K7MZQ3" required></div>`
+        <div class="field"><label for="r-invite">Mã mời</label>${plainField('r-invite', 'maxlength="8" placeholder="Ví dụ: K7MZQ3" style="text-transform:uppercase" required')}</div>`
       : `<div class="notice info small">Chưa có nhóm nào. Bạn sẽ là <b>chủ nhóm</b>: lập nhóm, nhận mã mời để gửi cho tối đa ${MAX_MEMBERS - 1} người còn lại.</div>
-        <div class="field"><label for="r-group">Tên nhóm</label><input id="r-group" class="input" maxlength="40" value="Hán Ngữ Cùng Nhau"></div>`}
-      <div class="field"><label for="r-name">Tên hiển thị</label><input id="r-name" class="input" maxlength="24" placeholder="Ví dụ: Minh Anh" required></div>
-      <div class="field"><label for="r-user">Tên đăng nhập</label><input id="r-user" class="input" maxlength="16" autocapitalize="none" autocomplete="username" placeholder="chữ thường, số, gạch dưới" pattern="[a-z0-9_]{3,16}" required></div>
-      <div class="field"><label for="r-pw">Mật khẩu (ít nhất 6 ký tự)</label><input id="r-pw" class="input" type="password" autocomplete="new-password" minlength="6" required></div>
+        <div class="field"><label for="r-group">Tên nhóm</label>${plainField('r-group', 'autocapitalize="words" maxlength="40" value="Hán Ngữ Cùng Nhau"')}</div>`}
+      <div class="field"><label for="r-name">Tên hiển thị</label>${plainField('r-name', 'autocapitalize="words" maxlength="24" placeholder="Ví dụ: Minh Anh" required')}</div>
+      <div class="field"><label for="r-user">Tên đăng nhập</label>${plainField('r-user', 'maxlength="16" placeholder="chữ thường, số, gạch dưới" pattern="[a-z0-9_]{3,16}" required')}</div>
+      <div class="field"><label for="r-pw">Mật khẩu (ít nhất 6 ký tự)</label>${pwField('r-pw', 'minlength="6" required')}</div>
       <div class="field"><label>Chọn con giáp làm ảnh đại diện</label><div class="zodiac">${ZODIAC.map(([e, z]) => `<button type="button" class="${authAv === e ? 'on' : ''}" data-act="auth-av" data-e="${e}">${e}<small>${z}</small></button>`).join('')}</div></div>
       <button class="btn primary block" type="submit" ${fbBusy ? 'disabled' : ''}>${fbBusy ? 'Đang tạo…' : g ? 'Tạo tài khoản' : 'Lập nhóm và tạo tài khoản'}</button></form>`;
   return {
@@ -2218,7 +2228,7 @@ ACT.settings = () => {
       ${vv.length ? `<select class="input" data-in="voice" data-l="vi" aria-label="Giọng tiếng Việt">${vv.map(v => `<option value="${esc(v.voiceURI)}" ${s.voice_vi === v.voiceURI ? 'selected' : ''}>🇻🇳 ${esc(v.name)}</option>`).join('')}</select>` : ''}</div>
     <div class="field"><label>Như Yên trả lời</label><div class="seg"><button class="${s.aiTier !== 'default' ? 'on' : ''}" data-act="settier" data-t="quick">Nhanh (hợp nói chuyện)</button><button class="${s.aiTier === 'default' ? 'on' : ''}" data-act="settier" data-t="default">Kỹ hơn, chậm hơn</button></div></div>
     ${fb && S.isOwner ? ownerPanel() : ''}
-    ${fb ? `<details class="box"><summary>Đổi mật khẩu</summary><form class="stack" data-form="chpw" style="margin-top:10px"><input id="pw-old" class="input" type="password" autocomplete="current-password" placeholder="Mật khẩu hiện tại" required><input id="pw-new" class="input" type="password" autocomplete="new-password" minlength="6" placeholder="Mật khẩu mới (ít nhất 6 ký tự)" required><button class="btn block" type="submit">Đổi mật khẩu</button></form></details>` : ''}
+    ${fb ? `<details class="box"><summary>Đổi mật khẩu</summary><form class="stack" data-form="chpw" autocomplete="off" style="margin-top:10px">${pwField('pw-old', 'placeholder="Mật khẩu hiện tại" required')}${pwField('pw-new', 'minlength="6" placeholder="Mật khẩu mới (ít nhất 6 ký tự)" required')}<button class="btn block" type="submit">Đổi mật khẩu</button></form></details>` : ''}
     ${S.isOwner && others.length ? `<div class="field"><label>Quản lý thành viên (chủ nhóm)</label><div class="list">${others.map(([u, a]) => `<div class="li"><span class="avatar sm">${esc(a.av)}</span><span class="grow">${esc(a.name)} <span class="small muted">@${esc(handle(u))}</span></span><button class="btn sm ghost" data-act="rmuser" data-u="${esc(u)}">Xoá</button></div>`).join('')}</div><p class="tiny muted">Xoá tài khoản giải phóng một chỗ trong nhóm; điểm của người đó sẽ không còn trên bảng xếp hạng.${fb ? ' Sau khi xoá nên bấm “Đổi mã mời”.' : ''}</p></div>` : ''}
     <button class="btn block" data-act="logout">Đăng xuất khỏi máy này</button>
     <details class="box small"><summary>Nguồn dữ liệu</summary><p style="margin-top:8px">Danh sách từ HSK: complete-hsk-vocabulary (MIT). Nghĩa tiếng Việt HSK 3–6: CVDICT (CC BY-SA), qua dự án Hiểu Chữ Hán. Âm Hán Việt: hanviet-pinyin-words (MIT). Nét viết: Hanzi Writer & Make Me a Hanzi (Arphic Public License). Pinyin câu: pinyin-pro (MIT). Nội dung HSK 1–2, ngữ pháp, hội thoại do nhóm biên soạn.</p></details>`);
@@ -2251,8 +2261,8 @@ function ownerPanel() {
     <div class="row between"><div><div class="small muted">Mã mời thành viên</div><div class="num" style="font-size:26px;font-weight:800;letter-spacing:.12em" id="inv-code">${esc(sec.invite || '—')}</div></div>
       <div class="row"><button class="btn sm" data-act="copyinv">Sao chép</button><button class="btn sm ghost" data-act="newinv">Đổi mã</button></div></div>
     <p class="tiny muted">Gửi mã này cùng đường liên kết trang web cho bạn bè. Nhóm tối đa ${g.max || MAX_MEMBERS} người (hiện có ${Object.keys(S.accounts).length}).</p>
-    <form class="stack" data-form="gkey"><label class="small" for="g-key"><b>Khoá Gemini</b> – cho Như Yên trò chuyện và gọi thoại ${sec.geminiKey ? '<span class="tag lv">Đã có</span>' : '<span class="tag" style="color:var(--seal)">Chưa có</span>'}</label>
-      <input id="g-key" class="input" type="password" autocomplete="off" placeholder="${sec.geminiKey ? 'Dán khoá mới để thay' : 'Dán khoá bắt đầu bằng AIza…'}">
+    <form class="stack" data-form="gkey" autocomplete="off"><label class="small" for="g-key"><b>Khoá Gemini</b> – cho Như Yên trò chuyện và gọi thoại ${sec.geminiKey ? '<span class="tag lv">Đã có</span>' : '<span class="tag" style="color:var(--seal)">Chưa có</span>'}</label>
+      ${pwField('g-key', `placeholder="${sec.geminiKey ? 'Dán khoá mới để thay' : 'Dán khoá bắt đầu bằng AIza…'}"`)}
       <p class="tiny muted">Lấy khoá miễn phí tại <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a> → Create API key. Khoá chỉ thành viên đã đăng nhập mới đọc được.</p>
       <button class="btn primary block" type="submit">Lưu khoá</button></form>
     <details><summary class="small"><b>Tuỳ chọn mô hình AI (nâng cao)</b></summary><form class="stack" data-form="gmodel" style="margin-top:8px">
