@@ -230,6 +230,26 @@ a.btn { text-decoration: none; }
 .opt.sel { border-color: var(--jade); background: var(--jade-soft); }
 .opt.right { border-color: var(--jade); background: var(--jade-soft); }
 .opt.wrong { border-color: var(--seal); background: var(--seal-soft); }
+.opt.hear { position: relative; cursor: pointer; }
+.opt .opt-han { display: block; font-size: 18px; margin-top: 4px; color: var(--ink); opacity: .85; }
+.opt .opt-snd { position: absolute; top: 6px; right: 8px; font-size: 13px; opacity: .7; }
+.q-snd { font-size: 18px; }
+.progress.sm { height: 6px; display: block; }
+.dq-row { align-items: center; }
+.dq-row.ok { opacity: .75; }
+.dq-row .lt { display: block; }
+.dq-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; min-width: 56px; }
+.dq-chest { padding: 10px 12px; border-radius: 12px; background: var(--surface-2); gap: 8px; flex-wrap: wrap; }
+.dq-chest.open { background: var(--jade-soft); }
+.duel-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+.duel-r .win { color: var(--gold); font-weight: 700; }
+.duel-call { border-color: var(--seal); background: var(--seal-soft); }
+.duel-vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.duel-vs .vs { font-weight: 900; color: var(--seal); font-size: 18px; }
+.duel-side { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 6px; border-radius: 14px; background: var(--surface-2); text-align: center; min-width: 0; }
+.duel-side.win { background: var(--jade-soft); outline: 2px solid var(--jade); }
+.duel-score { font-size: 34px; font-weight: 800; line-height: 1.1; }
+.fb-hear { background: var(--surface); flex: none; }
 .feedback { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); padding-top: 14px; border-top: 1px solid var(--line); background: var(--surface); }
 .feedback.ok { background: var(--jade-soft); }
 .feedback.bad { background: var(--seal-soft); }
@@ -376,9 +396,9 @@ details.box summary { font-weight: 700; cursor: pointer; }
 <div id="sheet-root"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 <input type="file" id="rec-input" accept="audio/*" capture hidden>
-<script src="config.js?v=202610272004"></script>
-<script src="platform.js?v=202610272004"></script>
-<script>window.HN_VERSION="202610272004";
+<script src="config.js?v=202610272015"></script>
+<script src="platform.js?v=202610272015"></script>
+<script>window.HN_VERSION="202610272015";
 'use strict';
 /* ================= tiện ích ================= */
 const $ = (s, r = document) => r.querySelector(s);
@@ -525,17 +545,17 @@ const S = {
   view: 'boot', params: {}, stack: [], tab: 'home',
   cap: { db: null, user: null, sample: null, room: null },
   mode: 'claude', group: null, secret: null, cid: null, isOwner: false, me: null, local: false, readOnly: false,
-  accounts: {}, players: {}, presence: [], msgs: [], meet: null, arena: null,
+  accounts: {}, players: {}, presence: [], msgs: [], meet: null, arena: null, duels: {},
   P: null, pub: null, srs: {},
 };
 function defaultProg() {
   return {
     goal: 50, daily: {}, lessons: {}, cur: null, level: 1, placement: null, badges: {},
     settings: { rate: 0.85, showPy: true, showVi: true, autoplay: true, aiVi: false, aiTier: 'quick', autosend: false, front: 'han' },
-    lastMatch: null, aiDay: {}, xpBase: 0, at: 0, setAt: 0, ai: null,
+    lastMatch: null, aiDay: {}, xpBase: 0, at: 0, setAt: 0, ai: null, dq: null, dqDays: 0, duelDone: {},
   };
 }
-function defaultPub(me) { return { name: me.name, av: me.av, xp: 0, wk: {}, daily: {}, streak: 0, last: 0, known: 0, lv: 1, wins: 0, matches: 0, blitz: { best: 0, wk: {} }, at: Date.now() }; }
+function defaultPub(me) { return { name: me.name, av: me.av, xp: 0, wk: {}, daily: {}, streak: 0, last: 0, known: 0, lv: 1, wins: 0, matches: 0, blitz: { best: 0, wk: {} }, dw: 0, dl: 0, dd: 0, dq: 0, dqN: 0, at: Date.now() }; }
 
 /* ================= lưu trữ ================= */
 const SAVE = {};
@@ -610,6 +630,17 @@ function mergeProgress(r) {
   } else if ((r.level || 1) > (P.level || 1) && (r.at || 0) > (P.at || 0)) { P.level = r.level; ch = true; }
   if (r.cur && (r.at || 0) > (P.at || 0) && r.cur !== P.cur) { P.cur = r.cur; ch = true; }
   if (r.lastMatch && r.lastMatch !== P.lastMatch && (r.at || 0) > (P.at || 0)) P.lastMatch = r.lastMatch;
+  if (r.dq && r.dq.d) {
+    if (!P.dq || r.dq.d > P.dq.d) { P.dq = r.dq; ch = true; }
+    else if (r.dq.d === P.dq.d) {
+      if ((r.dq.gen || 0) < (P.dq.gen || 0)) { P.dq.q = r.dq.q; P.dq.gen = r.dq.gen; ch = true; }
+      for (const [k, v] of Object.entries(r.dq.c || {})) if (((P.dq.c || {})[k] || 0) < v) { P.dq.c = { ...(P.dq.c || {}), [k]: v }; ch = true; }
+      for (const k of Object.keys(r.dq.got || {})) if (!(P.dq.got || {})[k]) { P.dq.got = { ...(P.dq.got || {}), [k]: 1 }; ch = true; }
+      if (r.dq.all && !P.dq.all) { P.dq.all = 1; ch = true; }
+    }
+  }
+  if ((r.dqDays || 0) > (P.dqDays || 0)) { P.dqDays = r.dqDays; ch = true; }
+  for (const [k, v] of Object.entries(r.duelDone || {})) if (!(P.duelDone || {})[k]) { P.duelDone = { ...(P.duelDone || {}), [k]: v }; ch = true; }
   if (r.ai && (!P.ai || (r.ai.at || 0) > (P.ai.at || 0))) { P.ai = r.ai; ch = true; if (typeof onRemoteAI === 'function') onRemoteAI(); }
   if (ch) derivePub();
   return ch;
@@ -620,6 +651,7 @@ function addXP(n) {
   S.P.daily[k] = (S.P.daily[k] || 0) + n;
   derivePub();
   saveProg(); savePub(); updateTop();
+  if (typeof dqCheck === 'function') setTimeout(dqCheck, 60);
   const el = document.querySelector('[data-xp-pill]'); if (el) { el.animate?.([{ transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 400 }); }
 }
 
@@ -635,6 +667,7 @@ const SRS = {
     else if (g === 2) { ivl = reps === 0 ? 1 : reps === 1 ? 3 : Math.round(ivl * ease / 100); reps++; due = t + ivl; }
     else { ivl = reps === 0 ? 4 : Math.round(Math.max(ivl, 1) * ease / 100 * 1.3); ease += 15; reps++; due = t + ivl; }
     S.srs[s] = [due, ivl, ease, reps, lapses, flags]; saveSrs(); updateKnown();
+    if (typeof dqTrack === 'function') dqTrack('review');
   },
   preview(s, g) { const c = S.srs[s] || [0, 0, 250, 0, 0, 0]; const [, ivl, ease, reps] = c; if (g === 0) return '<1 ngày'; const n = g === 1 ? Math.max(1, Math.round(Math.max(ivl, 1) * 1.2)) : g === 2 ? (reps === 0 ? 1 : reps === 1 ? 3 : Math.round(ivl * ease / 100)) : (reps === 0 ? 4 : Math.round(Math.max(ivl, 1) * ease / 100 * 1.3)); return n >= 30 ? Math.round(n / 30) + ' th' : n + ' ng'; },
   due() { const t = dayNum(); return Object.entries(S.srs).filter(([, c]) => c[0] <= t && !(c[5] & 2)).sort((a, b) => a[1][0] - b[1][0] || b[1][4] - a[1][4]).map(x => x[0]); },
@@ -745,7 +778,7 @@ function renderTop(out) {
 function updateTop() { if (S.cur) renderTop(S.cur); }
 function updateDots() {
   const r = $('#dot-review'); if (r && S.me) { const n = SRS.due().length; r.hidden = !n; r.textContent = n > 99 ? '99+' : n; }
-  const g = $('#dot-group'); if (g && S.me) { const seen = LS.get('seenMsg', 0); const n = S.msgs.filter(m => m.at > seen && m.u !== S.me.u).length; const live = S.arena && S.arena.state === 'lobby' && S.arena.host !== S.me.u; g.hidden = !n && !live; g.textContent = live ? '!' : n; }
+  const g = $('#dot-group'); if (g && S.me) { const seen = LS.get('seenMsg', 0); const n = S.msgs.filter(m => m.at > seen && m.u !== S.me.u).length; const live = (S.arena && S.arena.state === 'lobby' && S.arena.host !== S.me.u) || (typeof duelsForMe === 'function' && duelsForMe().some(d => d.from !== S.me.u)); g.hidden = !n && !live; g.textContent = live ? '!' : n; }
 }
 function leaveCall(to) { if (typeof CALL !== 'undefined' && CALL.on && to !== 'call') { callCleanup(); CALL.state = 'ended'; } }
 function go(view, params = {}, opts = {}) {
@@ -986,7 +1019,7 @@ VIEWS.home = () => {
   const ic = cur ? ({ vocab: '词', grammar: '法', dialog: '听', phrase: '句', pinyin: '音', tonedrill: '调', leveltest: '考' }[cur.L.type] || '学') : '学';
   const mods = [['vocab', '词', 'Kho từ vựng'], ['hanzi', '字', 'Học chữ Hán'], ['listen', '听', 'Luyện nghe'], ['speak', '说', 'Luyện nói'], ['grammarHome', '法', 'Ngữ pháp'], ['placement', '测', 'Kiểm tra trình độ']];
   return {
-    title: 'Chào ' + S.me.name, html: `<div class="stack-lg">
+    title: 'Chào ' + S.me.name, after() { dqCheck(); }, html: `<div class="stack-lg">
     ${installCard()}
     ${!TTS.ok ? `<div class="notice err small"><b>Trình duyệt này không phát được âm thanh.</b> ${S.mode === 'fb' ? 'Hãy mở trang bằng Chrome (Android) hoặc Safari (iPhone).' : 'Trên Android, hãy mở đường liên kết của trang bằng trình duyệt Chrome (đã đăng nhập claude.ai) để nghe phát âm và trò chuyện bằng giọng nói với Như Yên.'}</div>` : ''}
     <section class="card hero"><div class="goal">
@@ -998,6 +1031,8 @@ VIEWS.home = () => {
           <div class="stat"><b class="num">${cnt.known}</b><span>từ đã thuộc</span></div>
         </div>
       </div></div></section>
+    ${duelHomeCard()}
+    ${dqCard()}
     ${cur ? `<section class="card"><div class="continue"><div class="li-ic cur" style="width:64px;height:64px;font-size:30px;border-radius:16px">${ic}</div>
       <div class="stack" style="gap:6px;min-width:0"><div class="eyebrow">${lessonDone(cur.L.id) ? 'Bài tiếp theo' : 'Đang học dở'} · ${esc(cur.tr ? cur.tr.t : '')}</div><h3>${esc(cur.L.t)}</h3>
       <div class="progress"><i style="width:${Math.round(cur.pr.done / Math.max(cur.pr.total, 1) * 100)}%"></i></div><p class="tiny muted num">${cur.pr.done}/${cur.pr.total} bài trong chặng</p></div></div>
@@ -1073,6 +1108,7 @@ function completeLesson(id, score, xp) {
   if (tr) { const nx = tr.items.find(x => !lessonDone(x)); S.P.cur = nx || id; }
   saveProg();
   if (xp) addXP(xp);
+  dqTrack('lesson');
 }
 
 /* ---------- bài từ vựng ---------- */
@@ -1149,6 +1185,14 @@ function vocabLessonQs(ws) {
 function wordQuizQs(words, n = 12) { return shuffle(words).slice(0, n).map(w => anyQ(w)); }
 
 /* ================= TRẮC NGHIỆM – bộ chạy ================= */
+// Quy tắc âm thanh: câu hỏi NGHE thì đọc ngay khi hiện câu hỏi (vì âm thanh chính là đề bài);
+// mọi câu hỏi khác KHÔNG đọc trước (tránh lộ đáp án) mà đọc đáp án đúng ngay SAU khi bạn chọn.
+// Nút 🔊/🔇 trên thanh bài tập bật/tắt tự đọc; lúc nào cũng có thể bấm 🔊 để nghe lại.
+function isListenQ(q) { return !!(q && (q.listen || /^Nghe/.test(q.ask || ''))); }
+function answerAudio(q) {
+  if (!q) return '';
+  return q.sayAfter || q.say || (q.w && q.w.s) || (q.ex && q.ex.w ? q.ex.w.join('') : '') || '';
+}
 let Q = null, qTimer = 0;
 function startQuiz(qs, opts = {}) {
   clearInterval(qTimer);
@@ -1165,10 +1209,15 @@ VIEWS.quiz = () => {
   const q = curQ();
   const graded = Q.qs.filter(x => x.type !== 'learn').length || 1;
   const pos = Q.opts.timer ? null : Math.round(Q.i / Q.qs.length * 100);
-  const head = `<div class="quiz-top"><button class="icon-btn" data-act="q-quit" aria-label="Thoát">✕</button>${Q.opts.timer ? `<div class="grow"><span class="eyebrow">${esc(Q.opts.title || '')}</span></div><span class="pill xp num">✓ ${Q.ok}</span><span class="timer num" id="q-timer">${Q.left}s</span>` : `<div class="progress"><i style="width:${pos}%"></i></div><span class="small muted num">${Q.i + 1}/${Q.qs.length}</span>`}</div>`;
+  const snd = `<button class="icon-btn q-snd" data-act="q-sound" aria-pressed="${S.P.settings.autoplay ? 'true' : 'false'}" aria-label="${S.P.settings.autoplay ? 'Đang bật tự đọc – chạm để tắt' : 'Đang tắt tự đọc – chạm để bật'}">${S.P.settings.autoplay ? '🔊' : '🔇'}</button>`;
+  const head = `<div class="quiz-top"><button class="icon-btn" data-act="q-quit" aria-label="Thoát">✕</button>${snd}${Q.opts.timer ? `<div class="grow"><span class="eyebrow">${esc(Q.opts.title || '')}</span></div><span class="pill xp num">✓ ${Q.ok}</span><span class="timer num" id="q-timer">${Q.left}s</span>` : `<div class="progress"><i style="width:${pos}%"></i></div><span class="small muted num">${Q.i + 1}/${Q.qs.length}</span>`}</div>`;
   let body = '';
   if (q.type === 'learn') body = learnCard(q.w) + `<button class="btn primary block" data-act="q-next">Tiếp</button>`;
-  else if (q.type === 'mcq') body = `<p class="eyebrow">${esc(q.ask || '')}</p><div class="q-prompt">${q.prompt}</div><div class="opts ${q.two ? 'two' : ''}">${q.opts.map((o, i) => `<button class="opt ${Q.answered ? (o.v === q.a ? 'right' : (i === Q.sel ? 'wrong' : '')) : ''}" data-act="q-opt" data-i="${i}" ${Q.answered ? 'disabled' : ''}>${o.h}</button>`).join('')}</div>`;
+  else if (q.type === 'mcq') body = `<p class="eyebrow">${esc(q.ask || '')}</p><div class="q-prompt">${q.prompt}</div><div class="opts ${q.two ? 'two' : ''}">${q.opts.map((o, i) => {
+    const cls = Q.answered ? (o.v === q.a ? 'right' : (i === Q.sel ? 'wrong' : '')) : '';
+    if (Q.answered && !Q.opts.fast && typeof o.v === 'string' && hasHan(o.v)) return `<button class="opt ${cls} hear" data-act="say" data-t="${esc(o.v)}" aria-label="Nghe ${esc(o.v)}">${o.h}${String(o.h).includes(o.v) ? '' : `<span class="opt-han han">${esc(o.v)}</span>`}<span class="opt-snd" aria-hidden="true">🔊</span></button>`;
+    return `<button class="opt ${cls}" data-act="q-opt" data-i="${i}" ${Q.answered ? 'disabled' : ''}>${o.h}</button>`;
+  }).join('')}</div>${Q.answered && !Q.opts.fast && q.opts.some(o => typeof o.v === 'string' && hasHan(o.v)) ? '<p class="tiny muted" style="text-align:center">Chạm vào từng đáp án để nghe phát âm.</p>' : ''}`;
   else if (q.type === 'order') {
     const used = new Set(Q.built);
     body = `<p class="eyebrow">Sắp xếp thành câu đúng</p><div class="q-prompt"><div class="vi-big" style="font-size:18px">${esc(q.vi)}</div></div>
@@ -1182,13 +1231,17 @@ VIEWS.quiz = () => {
       ${Q.answered ? '' : `<button class="btn primary block" data-act="q-check">Kiểm tra</button>`}`;
   let fb = '';
   if (Q.answered && !Q.opts.fast) {
-    const ok = Q.lastOk;
-    fb = `<div class="feedback ${ok ? 'ok' : 'bad'}"><div class="wrap"><div class="fb-title">${ok ? 'Chính xác!' : 'Chưa đúng'}</div>${Q.fbHtml ? `<div class="small">${Q.fbHtml}</div>` : ''}<button class="btn ${ok ? 'primary' : 'seal'} block" data-act="q-next" id="q-next">Tiếp tục</button></div></div>`;
+    const ok = Q.lastOk; const aud = answerAudio(q);
+    fb = `<div class="feedback ${ok ? 'ok' : 'bad'}"><div class="wrap"><div class="row between"><div class="fb-title">${ok ? 'Chính xác!' : 'Chưa đúng'}</div>${aud && TTS.ok ? `<button class="btn sm fb-hear" data-act="say" data-t="${esc(aud)}">🔊 Nghe lại</button>` : ''}</div>${Q.fbHtml ? `<div class="small">${Q.fbHtml}</div>` : ''}<button class="btn ${ok ? 'primary' : 'seal'} block" data-act="q-next" id="q-next">Tiếp tục</button></div></div>`;
   }
   return {
     noTabs: true, title: Q.opts.title || 'Luyện tập', sub: '', html: `<div class="stack" style="padding-bottom:${Q.answered ? 150 : 0}px">${head}${body}</div>${fb}`,
     after() {
-      if (!Q.answered && (q.type === 'learn' || q.say) && (S.P.settings.autoplay || q.type === 'learn' || /Nghe/.test(q.ask || ''))) say(q.type === 'learn' ? q.w.s : q.say);
+      if (!Q.answered && Q.spoken !== Q.i) {
+        Q.spoken = Q.i;
+        if (q.type === 'learn') { if (S.P.settings.autoplay) say(q.w.s); }
+        else if (isListenQ(q) && q.say) say(q.say);
+      }
       const n = $('#q-next'); if (n) n.focus({ preventScroll: true });
       const ta = $('#q-type'); if (ta) ta.addEventListener('input', () => { Q.typed = ta.value; });
     }
@@ -1212,7 +1265,7 @@ function answer(ok, fbHtml) {
   if (!q.retry) { if (ok) Q.ok++; else Q.bad++; }
   if (!ok) { Q.wrongs.push(q); if (Q.opts.retryWrong && !q.retry) Q.qs.push({ ...q, retry: true }); }
   if (Q.opts.onAnswer) Q.opts.onAnswer(q, ok);
-  if (q.sayAfter && !Q.opts.fast) say(q.sayAfter);
+  if (!Q.opts.fast && S.P.settings.autoplay && !isListenQ(q)) { const a = answerAudio(q); if (a) say(a); }
   if (Q.opts.fast) { render({ keepScroll: true }); setTimeout(() => { if (Q && Q.answered) nextQ(); }, ok ? 280 : 650); }
   else render({ keepScroll: true });
 }
@@ -1229,7 +1282,6 @@ ACT['q-check'] = async () => {
   if (q.type === 'order') {
     const s = Q.built.map(k => q.shuf[k].t).join('');
     const ok = s === q.ans;
-    say(q.say);
     answer(ok, ok ? '' : 'Câu đúng: <span class="han" style="font-size:18px">' + esc(q.ans + q.tail) + '</span>');
   } else if (q.type === 'type') {
     const v = (Q.typed || '').replace(/[\s，。！？、,.!?]/g, '');
@@ -1248,13 +1300,20 @@ ACT['q-check'] = async () => {
 function nextQ() {
   if (!Q) return;
   if (Q.opts.gen && Q.i >= Q.qs.length - 2) { for (let k = 0; k < 5; k++) { const g = Q.opts.gen(); if (g) Q.qs.push(g); } }
+  TTS.stop();
   Q.i++; Q.answered = false; Q.sel = null; Q.built = []; Q.typed = ''; Q.fbHtml = '';
   if (Q.i >= Q.qs.length) return finishQuiz();
   const q = curQ(); if (q.type === 'order' && !q.shuf) q.shuf = shuffle(q.toks);
   render();
 }
 ACT['q-next'] = () => nextQ();
-ACT['q-quit'] = () => { clearInterval(qTimer); if (Q && Q.opts.onQuit) Q.opts.onQuit(); Q = null; back(); };
+ACT['q-sound'] = () => {
+  S.P.settings.autoplay = !S.P.settings.autoplay; saveSettings();
+  if (!S.P.settings.autoplay) TTS.stop();
+  toast(S.P.settings.autoplay ? 'Đã bật tự đọc: câu nghe đọc trước, các câu khác đọc đáp án sau khi chọn.' : 'Đã tắt tự đọc. Vẫn bấm 🔊 để nghe khi cần (câu hỏi nghe vẫn được đọc).', 3500);
+  render({ keepScroll: true });
+};
+ACT['q-quit'] = () => { clearInterval(qTimer); TTS.stop(); if (Q && Q.opts.onQuit) Q.opts.onQuit(); Q = null; back(); };
 function finishQuiz() {
   clearInterval(qTimer);
   if (!Q || Q.done) return;
@@ -1262,6 +1321,10 @@ function finishQuiz() {
   const graded = Q.ok + Q.bad;
   Q.score = Q.opts.timer ? Q.ok : (graded ? Math.round(Q.ok / graded * 100) : 100);
   Q.xp = Q.opts.onDone ? (Q.opts.onDone(Q.score, Q) || 0) : 0;
+  if (!Q.opts.timer && !Q.opts.fast && graded >= 4) {
+    if (Q.score >= 80) dqTrack('q80');
+    if (Q.opts.kind === 'listen' && Q.score >= 70) dqTrack('listen');
+  }
   render();
 }
 function quizResult() {
@@ -1281,6 +1344,86 @@ function quizResult() {
 }
 ACT['q-finish'] = () => { const o = Q && Q.opts; Q = null; if (o && o.onExit) o.onExit(); else back(); };
 ACT['q-again'] = () => { const o = Q.opts; o.again(); };
+
+/* ================= THỬ THÁCH HÀNG NGÀY ================= */
+// Mỗi ngày 3 nhiệm vụ, sinh từ tiến trình của chính người học (mục tiêu XP, bài đang học dở,
+// số thẻ đến hạn, từ hay quên, nhóm có bạn để thách đấu…). Hoàn thành tự nhận XP; đủ 3 nhận thêm rương thưởng.
+const DQ_BONUS = 20;
+function strHash(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function dqShort(t, n = 26) { t = String(t || '').replace(/^Bài\s*\d+\s*[:·-]\s*/i, ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+function dqGenerate() {
+  const day = dayKey(); const rnd = mulberry32(strHash((S.me ? S.me.u : '') + day));
+  const goal = S.P.goal || 50; const out = [];
+  out.push({ id: 'xp', k: 'xp', n: goal, xp: 10, ic: '🔥', t: `Đạt ${goal} XP hôm nay` });
+  const cur = currentLesson();
+  if (cur && !lessonDone(cur.L.id)) out.push({ id: 'les', k: 'les', ref: cur.L.id, n: 1, xp: 15, ic: '📘', t: `Học xong bài “${dqShort(cur.L.t)}”` });
+  else out.push({ id: 'les', k: 'lesson', n: 1, xp: 15, ic: '📘', t: 'Học xong 1 bài trong Lộ trình' });
+  const due = SRS.due().length, weak = SRS.weak().length, total = Object.keys(S.srs).length;
+  const others = Object.keys(S.accounts).filter(u => !S.me || u !== S.me.u).length;
+  const c = [];
+  if (due >= 5) { const n = clamp(Math.round(due * 0.6 / 5) * 5, 5, 30); c.push([3, { id: 'rev', k: 'review', n, xp: 15, ic: '🔁', t: `Ôn ${n} thẻ đến hạn` }]); }
+  else if (total >= 10) c.push([1.2, { id: 'rev', k: 'review', n: 10, xp: 15, ic: '🔁', t: 'Ôn 10 thẻ trong mục Ôn tập' }]);
+  if (weak >= 3) c.push([2, { id: 'weak', k: 'review', n: Math.min(weak, 10), xp: 15, ic: '🧠', t: `Ôn ${Math.min(weak, 10)} từ hay quên` }]);
+  if (TTS.ok) c.push([1.5, { id: 'listen', k: 'listen', n: 1, xp: 15, ic: '🎧', t: 'Đạt từ 70% một bài Luyện nghe' }]);
+  c.push([1, { id: 'q80', k: 'q80', n: 2, xp: 15, ic: '🎯', t: 'Đạt từ 80% trong 2 bài luyện tập' }]);
+  if (S.cap.sample) c.push([1.2, { id: 'ai', k: 'ai', n: 5, xp: 15, ic: '💬', t: 'Nói với Như Yên 5 câu tiếng Trung' }]);
+  if (others && !S.local) c.push([1.4, { id: 'duel', k: 'duel', n: 1, xp: 15, ic: '⚔️', t: 'Chơi 1 trận Thách đấu với bạn' }]);
+  const bl = Math.max(8, Math.min(20, ((S.pub && S.pub.blitz && S.pub.blitz.best) || 8) + 1));
+  c.push([0.8, { id: 'blitz', k: 'blitz', n: bl, xp: 15, ic: '⏱️', t: `Đạt ${bl} câu trong Thử thách 60 giây`, max: true }]);
+  // chọn 1 nhiệm vụ luyện tập theo trọng số (ưu tiên điều người học đang cần nhất)
+  let sum = c.reduce((a, [w]) => a + w, 0), r = rnd() * sum;
+  for (const [w, q] of c) { r -= w; if (r <= 0) { out.push(q); break; } }
+  if (out.length < 3) out.push(c[c.length - 1][1]);
+  return { d: day, gen: Date.now(), q: out, c: {}, got: {}, all: 0 };
+}
+function dqEnsure() {
+  if (!S.P || !S.me) return null;
+  if (!S.P.dq || S.P.dq.d !== dayKey()) { S.P.dq = dqGenerate(); saveProg(); }
+  return S.P.dq;
+}
+function dqProg(q) {
+  const dq = S.P.dq;
+  if (q.k === 'xp') return todayXP();
+  if (q.k === 'les') { const l = S.P.lessons[q.ref]; return l && dayNum(new Date(l.at)) === dayNum() ? 1 : 0; }
+  return (dq.c && dq.c[q.k]) || 0;
+}
+function dqTrack(k, n = 1, max = false) {
+  if (!S.P || !S.me) return;
+  const dq = dqEnsure(); if (!dq) return;
+  dq.c = dq.c || {};
+  dq.c[k] = max ? Math.max(dq.c[k] || 0, n) : (dq.c[k] || 0) + n;
+  saveProg(); setTimeout(dqCheck, 50);
+}
+let dqChecking = false;
+function dqCheck() {
+  if (dqChecking || !S.P || !S.me) return; dqChecking = true;
+  try {
+    const dq = dqEnsure(); if (!dq) return;
+    const msgs = []; let gained = 0;
+    for (const q of dq.q) if (!dq.got[q.id] && dqProg(q) >= q.n) { dq.got[q.id] = 1; gained += q.xp; msgs.push(q.t); }
+    if (!dq.all && dq.q.every(q => dq.got[q.id])) { dq.all = 1; gained += DQ_BONUS; S.P.dqDays = (S.P.dqDays || 0) + 1; if (S.pub) { S.pub.dq = dayNum(); S.pub.dqN = S.P.dqDays; } msgs.push('ALL'); }
+    if (!gained) return;
+    saveProg(); addXP(gained); if (S.pub) savePub();
+    const all = msgs.includes('ALL');
+    setTimeout(() => toast(all ? `🎁 Hoàn thành cả 3 thử thách hôm nay! +${gained} XP` : `🎯 Xong thử thách: ${msgs[0]} · +${gained} XP`, 4000), 700);
+    if (S.view === 'home') render({ keepScroll: true });
+  } finally { dqChecking = false; }
+}
+function dqLeft() { const now = new Date(); const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1); const m = Math.max(0, Math.round((end - now) / 60000)); return m >= 60 ? `${Math.floor(m / 60)} giờ ${m % 60} phút` : `${m} phút`; }
+function dqGo(q) {
+  if (q.k === 'les') return `data-act="lesson" data-id="${esc(q.ref)}"`;
+  return { xp: 'data-act="tab" data-v="learn"', lesson: 'data-act="tab" data-v="learn"', review: 'data-act="tab" data-v="review"', listen: 'data-act="go" data-v="listen"', q80: 'data-act="tab" data-v="review"', ai: 'data-act="tab" data-v="ai"', duel: 'data-act="duelpick"', blitz: 'data-act="blitz"' }[q.k] || 'data-act="tab" data-v="learn"';
+}
+function dqCard() {
+  const dq = dqEnsure(); if (!dq) return '';
+  const done = dq.q.filter(q => dq.got[q.id]).length;
+  return `<section class="card stack dq"><div class="section-h"><h3>🎯 Thử thách hôm nay</h3><span class="small muted num">${done}/3</span></div>
+    <div class="list">${dq.q.map(q => { const p = Math.min(dqProg(q), q.n), ok = !!dq.got[q.id];
+      return `<button class="li dq-row ${ok ? 'ok' : ''}" ${ok ? 'disabled' : dqGo(q)}><span class="li-ic ${ok ? 'done' : ''}">${ok ? '✓' : q.ic}</span><span class="grow"><span class="lt">${esc(q.t)}</span><span class="progress sm" style="margin-top:6px"><i style="width:${Math.round(p / q.n * 100)}%"></i></span></span><span class="dq-r num">${ok ? `<span class="tiny muted">+${q.xp}</span>` : `<b class="small">${p}/${q.n}</b><span class="tiny" style="color:var(--gold)">+${q.xp} XP</span>`}</span></button>`; }).join('')}</div>
+    <div class="row between dq-chest ${dq.all ? 'open' : ''}"><span class="small">${dq.all ? '🎁 Đã mở rương thưởng hôm nay!' : `🎁 Xong cả 3 nhận thêm <b style="color:var(--gold)">+${DQ_BONUS} XP</b>`}</span><span class="tiny muted">Làm mới sau ${dqLeft()}</span></div>
+    ${S.P.dqDays ? `<p class="tiny muted">Bạn đã hoàn thành trọn thử thách ${S.P.dqDays} ngày.</p>` : ''}
+  </section>`;
+}
 /* ================= NGỮ PHÁP ================= */
 const PARTICLES = ['的', '了', '过', '着', '得', '地', '吗', '呢', '吧', '很', '不', '没', '在', '是', '把', '被', '比', '就', '才', '都', '也', '还', '再', '又', '给', '跟', '对', '从', '离', '会', '能', '想', '要', '可以'];
 function grammarById(id) { return D.core.grammar.find(g => g.id === id); }
@@ -1416,7 +1559,7 @@ ACT.lq = d => {
   if (d.k === 'word') qs = shuffle(ws).slice(0, 12).map(qListen);
   else if (d.k === 'sent') { const vis = exs.map(e => e.vi); qs = shuffle(exs).slice(0, 10).map(e => qSentMeaning(e, vis)); }
   else { const toks = [...new Set(exs.flatMap(e => e.w.filter(hasHan)))]; qs = shuffle(exs).slice(0, 10).map(e => { const idx = e.w.map((t, i) => [t, i]).filter(([t]) => hasHan(t)); const [, k] = idx[Math.floor(Math.random() * idx.length)]; const q = qFill(e, k, toks); q.ask = 'Nghe rồi chọn từ còn thiếu'; q.say = e.w.join(''); q.prompt = `<button class="play" data-act="say" data-t="${esc(e.w.join(''))}">🔊</button>` + q.prompt; q.sayAfter = null; return q; }); }
-  startQuiz(qs, { title: 'Luyện nghe', onDone: sc => { const xp = 5 + Math.round(sc / 10); addXP(xp); return xp; } });
+  startQuiz(qs, { title: 'Luyện nghe', kind: 'listen', onDone: sc => { const xp = 5 + Math.round(sc / 10); addXP(xp); return xp; } });
 };
 function voiceHelp() { return `<div class="notice small"><b>Máy chưa có giọng đọc tiếng Trung.</b> Android: Cài đặt → Hệ thống → Ngôn ngữ → Đầu ra văn bản thành giọng nói → Công cụ của Google → tải "Tiếng Trung (Trung Quốc đại lục)". iPhone: Cài đặt → Trợ năng → Nội dung được đọc → Giọng nói → Tiếng Trung.</div>`; }
 
@@ -1939,6 +2082,7 @@ ACT.aisend = async () => {
   if (!text || aiBusy || !S.cap.sample) return;
   clearTimeout(aiSendT); TTS.stop();
   AIC.msgs.push({ r: 'u', t: text.slice(0, 600) }); aiSaveLocal();
+  if (hasHan(text)) dqTrack('ai');
   aiBusy = true; aiPartial = ''; render({ keepScroll: true });
   const k = dayKey(); if (hasHan(text)) { S.P.aiDay = { [k]: (S.P.aiDay && S.P.aiDay[k]) || 0 }; if (S.P.aiDay[k] < 60) { S.P.aiDay[k] += 3; addXP(3); } }
   aiCtl = new AbortController();
@@ -2069,7 +2213,7 @@ function callCleanup() {
   try { CALL.node && (CALL.node.port.onmessage = null); CALL.src && CALL.src.disconnect(); CALL.node && CALL.node.disconnect(); } catch { }
   if (CALL.stream) CALL.stream.getTracks().forEach(t => t.stop()); CALL.stream = null;
   try { CALL.ctxIn && CALL.ctxIn.close(); CALL.ctxOut && CALL.ctxOut.close(); } catch { } CALL.ctxIn = CALL.ctxOut = null;
-  if (mins > 0 && !CALL.xpGiven) { CALL.xpGiven = Math.min(30, mins * 3); addXP(CALL.xpGiven); }
+  if (mins > 0 && !CALL.xpGiven) { CALL.xpGiven = Math.min(30, mins * 3); addXP(CALL.xpGiven); dqTrack('ai', 5); }
   CALL.t0 = 0;
 }
 VIEWS.call = () => {
@@ -2107,10 +2251,10 @@ function boardRows() {
   const wk = weekKey();
   const t = dayNum();
   const users = new Set([...Object.keys(S.accounts), ...Object.keys(S.players)]);
-  const val = u => { const p = S.players[u] || {}; if (boardTab === 'week') return (p.wk && p.wk[wk]) || 0; if (boardTab === 'xp') return p.xp || 0; if (boardTab === 'streak') return p.last >= t - 1 ? (p.streak || 0) : 0; if (boardTab === 'blitz') return (p.blitz && p.blitz.best) || 0; if (boardTab === 'known') return p.known || 0; return p.wins || 0; };
-  const unit = { week: 'XP', xp: 'XP', streak: 'ngày', blitz: 'câu', known: 'từ', arena: 'thắng' }[boardTab];
+  const val = u => { const p = S.players[u] || {}; if (boardTab === 'week') return (p.wk && p.wk[wk]) || 0; if (boardTab === 'xp') return p.xp || 0; if (boardTab === 'streak') return p.last >= t - 1 ? (p.streak || 0) : 0; if (boardTab === 'blitz') return (p.blitz && p.blitz.best) || 0; if (boardTab === 'known') return p.known || 0; if (boardTab === 'duel') return p.dw || 0; if (boardTab === 'dq') return p.dqN || 0; return p.wins || 0; };
+  const unit = { week: 'XP', xp: 'XP', streak: 'ngày', blitz: 'câu', known: 'từ', arena: 'thắng', duel: 'thắng', dq: 'ngày' }[boardTab];
   const on = onlineSet();
-  return [...users].map(u => ({ u, v: val(u) })).sort((a, b) => b.v - a.v).map((r, i) => `<div class="bd-row ${S.me && r.u === S.me.u ? 'me' : ''}"><span class="rank ${i === 0 && r.v ? 'r1' : ''}">${i === 0 && r.v ? '🥇' : i === 1 && r.v ? '🥈' : i === 2 && r.v ? '🥉' : i + 1}</span><span class="avatar sm">${esc(memberAv(r.u))}</span><span class="lt" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(memberName(r.u))} ${on.has(r.u) ? '<span class="online" title="Đang online"></span>' : ''}</span><b class="num">${r.v} ${unit}</b></div>`).join('');
+  return [...users].map(u => ({ u, v: val(u) })).sort((a, b) => b.v - a.v).map((r, i) => `<div class="bd-row ${S.me && r.u === S.me.u ? 'me' : ''}"><span class="rank ${i === 0 && r.v ? 'r1' : ''}">${i === 0 && r.v ? '🥇' : i === 1 && r.v ? '🥈' : i === 2 && r.v ? '🥉' : i + 1}</span><span class="avatar sm">${esc(memberAv(r.u))}</span><span class="lt" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(memberName(r.u))} ${on.has(r.u) ? '<span class="online" title="Đang online"></span>' : ''}${(S.players[r.u] || {}).dq === t ? ' <span title="Đã xong thử thách hôm nay">🎯</span>' : ''}</span><b class="num">${r.v} ${unit}</b></div>`).join('');
 }
 VIEWS.group = () => {
   const on = onlineSet();
@@ -2133,16 +2277,18 @@ VIEWS.group = () => {
       ${S.mode === 'fb' && S.group && S.group.room ? `<div class="stack" style="border-top:1px solid var(--line);padding-top:12px"><div class="small"><b>Phòng họp cố định của nhóm (Jitsi)</b> – không giới hạn thời gian, không cần dán liên kết.</div><a class="btn block" href="https://meet.jit.si/${esc(S.group.room)}" target="_blank" rel="noopener noreferrer">Vào phòng Jitsi của nhóm</a><p class="tiny muted">Người vào đầu tiên cần đăng nhập bằng tài khoản Google để mở phòng; những người sau chỉ cần bấm vào. Trên điện thoại nên cài ứng dụng Jitsi Meet.</p></div>` : ''}
     </section>
 
+    ${duelSection()}
+
     <section class="card stack"><div class="section-h"><h3>⚔️ Đấu trường trực tiếp</h3>${ar ? `<span class="pill fire">${ar.state === 'lobby' ? 'Đang chờ' : 'Đang đấu'}</span>` : ''}</div>
       ${ar ? `<p>${esc(memberName(ar.host))} mở phòng đấu HSK ${ar.lv} · ${ar.n} câu.</p><button class="btn seal block" data-act="go" data-v="arena">${ar.state === 'lobby' ? 'Vào phòng đấu' : 'Xem trận đấu'}</button>` :
       `<p class="small muted">Mọi người cùng trả lời một bộ câu hỏi giống nhau, ai đúng nhiều và nhanh nhất sẽ thắng.</p><div class="row-wrap">${[1, 2, 3, 4, 5, 6].map(l => `<button class="chip" data-act="arenanew" data-lv="${l}" ${group ? '' : 'disabled'}>HSK ${l}</button>`).join('')}</div>`}
     </section>
 
     <section class="card stack"><div class="section-h"><h3>⏱️ Thử thách 60 giây</h3><span class="small muted num">Kỷ lục của bạn: ${myBlitz.best || 0}</span></div>
-      <p class="small muted">Trả lời đúng càng nhiều càng tốt trong 60 giây. Kỷ lục được ghi lên bảng xếp hạng.</p><button class="btn primary block" data-act="blitz">Chơi ngay</button></section>
+      <p class="small muted">Trả lời đúng càng nhiều càng tốt trong 60 giây. Kỷ lục được ghi lên bảng xếp hạng. 🎯 bên cạnh tên là bạn đã xong thử thách hôm nay.</p><button class="btn primary block" data-act="blitz">Chơi ngay</button></section>
 
     <section class="stack"><h3>🏆 Bảng thành tích</h3>
-      <div class="chips">${[['week', 'Tuần này'], ['xp', 'Tổng XP'], ['streak', 'Chuỗi ngày'], ['known', 'Từ đã thuộc'], ['blitz', '60 giây'], ['arena', 'Đấu trường']].map(([k, n]) => `<button class="chip ${boardTab === k ? 'on' : ''}" data-act="board" data-k="${k}">${n}</button>`).join('')}</div>
+      <div class="chips">${[['week', 'Tuần này'], ['xp', 'Tổng XP'], ['streak', 'Chuỗi ngày'], ['known', 'Từ đã thuộc'], ['duel', 'Thách đấu'], ['dq', 'Thử thách ngày'], ['blitz', '60 giây'], ['arena', 'Đấu trường']].map(([k, n]) => `<button class="chip ${boardTab === k ? 'on' : ''}" data-act="board" data-k="${k}">${n}</button>`).join('')}</div>
       <div class="list board" id="board">${boardRows()}</div></section>
 
     <section class="stack"><h3>💬 Trò chuyện nhóm</h3>
@@ -2181,7 +2327,7 @@ ACT.blitz = async () => {
   const gen = () => { const w = src[Math.floor(Math.random() * src.length)]; const q = anyQ(w, ['meaning', 'hanzi', 'pinyin']); q.sayAfter = null; return q; };
   startQuiz(Array.from({ length: 6 }, gen), {
     title: 'Thử thách 60 giây', timer: 60, fast: true, gen,
-    onDone: sc => { const b = S.pub.blitz || (S.pub.blitz = { best: 0, wk: {} }); const wk = weekKey(); const rec = sc > (b.best || 0); b.best = Math.max(b.best || 0, sc); b.wk = { [wk]: Math.max((b.wk && b.wk[wk]) || 0, sc) }; savePub(); const xp = Math.min(30, sc); addXP(xp); if (rec && sc) toast('Kỷ lục mới!'); return xp; },
+    onDone: sc => { const b = S.pub.blitz || (S.pub.blitz = { best: 0, wk: {} }); const wk = weekKey(); const rec = sc > (b.best || 0); b.best = Math.max(b.best || 0, sc); b.wk = { [wk]: Math.max((b.wk && b.wk[wk]) || 0, sc) }; savePub(); const xp = Math.min(30, sc); addXP(xp); dqTrack('blitz', sc, true); if (rec && sc) toast('Kỷ lục mới!'); return xp; },
     again: () => ACT.blitz(), againLabel: 'Chơi lại',
     resultHtml: q => `<p class="small">Kỷ lục cá nhân: <b>${(S.pub.blitz && S.pub.blitz.best) || 0}</b> câu</p>`,
     onExit: () => tab('group'),
@@ -2294,7 +2440,7 @@ ACT.settings = () => {
     <div class="field"><label>Mục tiêu mỗi ngày</label><div class="seg">${[20, 50, 100, 150].map(g => `<button class="${S.P.goal === g ? 'on' : ''}" data-act="setgoal" data-g="${g}">${g} XP</button>`).join('')}</div></div>
     <div class="field"><label>Trình độ hiện tại (dùng cho gợi ý, Như Yên, luyện nghe)</label><div class="seg">${[1, 2, 3, 4, 5, 6].map(l => `<button class="${S.P.level === l ? 'on' : ''}" data-act="setlv" data-l="${l}">${l}</button>`).join('')}</div></div>
     <div class="field"><label>Âm thanh</label>${speedCtl()}
-      <label class="row small"><input type="checkbox" data-in="tog" data-k="autoplay" ${s.autoplay ? 'checked' : ''}> Tự phát âm khi gặp từ mới</label>
+      <label class="row small"><input type="checkbox" data-in="tog" data-k="autoplay" ${s.autoplay ? 'checked' : ''}> Tự đọc từ mới và đọc đáp án sau khi chọn</label>
       ${vz.length ? `<select class="input" data-in="voice" data-l="zh" aria-label="Giọng tiếng Trung">${vz.map(v => `<option value="${esc(v.voiceURI)}" ${s.voice_zh === v.voiceURI ? 'selected' : ''}>🇨🇳 ${esc(v.name)}</option>`).join('')}</select>` : voiceHelp()}
       ${vv.length ? `<select class="input" data-in="voice" data-l="vi" aria-label="Giọng tiếng Việt">${vv.map(v => `<option value="${esc(v.voiceURI)}" ${s.voice_vi === v.voiceURI ? 'selected' : ''}>🇻🇳 ${esc(v.name)}</option>`).join('')}</select>` : ''}</div>
     <div class="field"><label>Như Yên trả lời</label><div class="seg"><button class="${s.aiTier !== 'default' ? 'on' : ''}" data-act="settier" data-t="quick">Nhanh (hợp nói chuyện)</button><button class="${s.aiTier === 'default' ? 'on' : ''}" data-act="settier" data-t="default">Kỹ hơn, chậm hơn</button></div></div>
@@ -2358,6 +2504,151 @@ FORMS.chpw = async () => {
   const o = $('#pw-old').value, n = $('#pw-new').value; if (n.length < 6) return toast('Mật khẩu mới cần ít nhất 6 ký tự.');
   try { await HNP.changePassword(o, n); toast('Đã đổi mật khẩu'); closeSheet(); } catch (e) { toast(e.message || 'Không đổi được mật khẩu.'); }
 };
+
+/* ================= THÁCH ĐẤU 1-1 (không cần online cùng lúc) ================= */
+// Lưu trong bộ sưu tập "arena" (tài liệu d_xxx) nên không cần sửa Luật bảo mật Firestore.
+// Hai người làm cùng một bộ 10 câu (cùng hạt giống), ai đúng nhiều hơn thắng; bằng điểm thì ai nhanh hơn thắng.
+const DUEL_N = 10, DUEL_TTL = 3 * 864e5, DUEL_KEEP = 30 * 864e5;
+let duelUnsub = null, duelPickLv = 0;
+function duelRes(d, u) { return d && d['r_' + u] || null; }
+function duelOpp(d) { return d.from === S.me.u ? d.to : d.from; }
+function duelState(d) {
+  if (d.x === 'no') return 'declined';
+  if (duelRes(d, d.from) && duelRes(d, d.to)) return 'done';
+  if (Date.now() > d.created + DUEL_TTL) return 'expired';
+  return 'open';
+}
+function duelWinner(d) {
+  const a = duelRes(d, d.from), b = duelRes(d, d.to); if (!a || !b) return undefined;
+  if (a.s !== b.s) return a.s > b.s ? d.from : d.to;
+  if (Math.abs(a.t - b.t) < 300) return null;
+  return a.t < b.t ? d.from : d.to;
+}
+function myDuels() { const me = S.me && S.me.u; return Object.values(S.duels || {}).filter(d => d.from === me || d.to === me).sort((a, b) => b.created - a.created); }
+function duelsForMe() { const me = S.me && S.me.u; return myDuels().filter(d => duelState(d) === 'open' && !duelRes(d, me)); }
+function h2h(u) { let w = 0, l = 0, dr = 0; for (const d of myDuels()) { if (duelOpp(d) !== u || duelState(d) !== 'done') continue; const x = duelWinner(d); if (x === S.me.u) w++; else if (x === null) dr++; else l++; } return { w, l, d: dr }; }
+function watchDuels() {
+  if (duelUnsub || S.local || !S.cap.db) return;
+  try {
+    duelUnsub = S.cap.db.collection('arena').where('kind', '==', 'duel').onSnapshot(snap => {
+      const m = {}; snap.docs.forEach(d => { const x = d.data(); if (x && x.kind === 'duel') m[d.id] = x; });
+      S.duels = m; duelSettle(); updateDots();
+      if (['group', 'duel', 'home'].includes(S.view)) render({ keepScroll: true });
+    }, e => console.warn('duels', e));
+  } catch (e) { console.warn(e); }
+}
+function duelSettle() {
+  const me = S.me && S.me.u; if (!me || !S.P) return;
+  S.P.duelDone = S.P.duelDone || {};
+  let xp = 0, msg = '', ch = false;
+  for (const d of myDuels()) {
+    // dọn trận cũ để kho dữ liệu luôn gọn
+    if (Date.now() - d.created > DUEL_KEEP && d.from === me) { S.cap.db.doc('arena/' + d.id).delete().catch(() => { }); continue; }
+    if (duelState(d) !== 'done' || S.P.duelDone[d.id]) continue;
+    const w = duelWinner(d); const r = w === me ? 'w' : w === null ? 'd' : 'l';
+    S.P.duelDone[d.id] = r; ch = true;
+    if (r === 'w') S.pub.dw = (S.pub.dw || 0) + 1; else if (r === 'l') S.pub.dl = (S.pub.dl || 0) + 1; else S.pub.dd = (S.pub.dd || 0) + 1;
+    const g = r === 'w' ? 15 : r === 'd' ? 8 : 3; xp += g;
+    const mine = duelRes(d, me).s, his = duelRes(d, duelOpp(d)).s;
+    msg = r === 'w' ? `⚔️ Bạn thắng ${memberName(duelOpp(d))} ${mine}–${his}! +${g} XP` : r === 'd' ? `⚔️ Hoà với ${memberName(duelOpp(d))} ${mine}–${his} · +${g} XP` : `⚔️ ${memberName(duelOpp(d))} thắng ${his}–${mine}. Thách đấu lại nhé! +${g} XP`;
+  }
+  for (const k of Object.keys(S.P.duelDone)) if (!S.duels[k] && Object.keys(S.P.duelDone).length > 200) delete S.P.duelDone[k];
+  if (ch) { saveProg(); savePub(); if (xp) addXP(xp); setTimeout(() => toast(msg, 4500), 400); }
+}
+function duelRow(d) {
+  const me = S.me.u, o = duelOpp(d), st = duelState(d), mine = duelRes(d, me), his = duelRes(d, o);
+  let right;
+  if (st === 'done') { const w = duelWinner(d); right = `<b class="num">${mine.s}–${his.s}</b><span class="tiny ${w === me ? 'win' : ''}">${w === me ? '🏆 Thắng' : w === null ? 'Hoà' : 'Thua'}</span>`; }
+  else if (st === 'open' && !mine) right = `<span class="btn sm seal">Vào đấu</span>`;
+  else if (st === 'open') right = `<span class="tiny muted">Chờ ${esc(memberName(o))}</span>`;
+  else right = `<span class="tiny muted">${st === 'declined' ? 'Đã từ chối' : 'Hết hạn'}</span>`;
+  return `<button class="li duel-row" data-act="go" data-v="duel" data-p='${JSON.stringify({ id: d.id })}'><span class="avatar sm">${esc(memberAv(o))}</span><span class="grow"><span class="lt">${d.from === me ? 'Bạn ⚔️ ' + esc(memberName(o)) : esc(memberName(o)) + ' ⚔️ bạn'}</span><br><span class="tiny muted">HSK ${d.lv} · ${d.n} câu · ${ago(d.created)}</span></span><span class="duel-r">${right}</span></button>`;
+}
+function duelSection() {
+  if (S.local || !S.cap.db) return '';
+  const me = S.me.u; const others = Object.keys(S.accounts).filter(u => u !== me);
+  const waiting = duelsForMe(); const recent = myDuels().filter(d => !waiting.includes(d)).slice(0, 6);
+  return `<section class="card stack"><div class="section-h"><h3>🤺 Thách đấu 1-1</h3><span class="small muted num">${S.pub.dw || 0} thắng · ${S.pub.dl || 0} thua</span></div>
+    <p class="small muted">Chọn một bạn, làm 10 câu ngay; bạn ấy làm cùng bộ câu đó lúc nào rảnh (trong 3 ngày). Đúng nhiều hơn thắng, bằng điểm thì ai nhanh hơn thắng.</p>
+    ${waiting.length ? `<div class="list">${waiting.map(duelRow).join('')}</div>` : ''}
+    ${others.length ? `<div class="list">${others.map(u => { const h = h2h(u); return `<div class="li"><span class="avatar sm">${esc(memberAv(u))}</span><span class="grow"><span class="lt">${esc(memberName(u))}</span><br><span class="tiny muted">Đối đầu: ${h.w} thắng · ${h.l} thua${h.d ? ' · ' + h.d + ' hoà' : ''}</span></span><button class="btn sm" data-act="duelnew" data-u="${esc(u)}">Thách đấu</button></div>`; }).join('')}</div>` : '<p class="notice small">Mời thêm bạn vào nhóm (mã mời trong Cài đặt) để thách đấu nhau.</p>'}
+    ${recent.length ? `<details><summary class="small">Các trận gần đây (${recent.length})</summary><div class="list" style="margin-top:8px">${recent.map(duelRow).join('')}</div></details>` : ''}
+  </section>`;
+}
+function duelHomeCard() {
+  if (S.local || !S.me) return '';
+  const w = duelsForMe().filter(d => d.from !== S.me.u); if (!w.length) return '';
+  const d = w[0];
+  return `<section class="card stack duel-call"><div class="row" style="gap:12px"><span class="avatar">${esc(memberAv(d.from))}</span><div class="grow"><b>${esc(memberName(d.from))} đang thách đấu bạn!</b><div class="tiny muted">HSK ${d.lv} · ${d.n} câu · còn ${Math.max(1, Math.ceil((d.created + DUEL_TTL - Date.now()) / 3600e3))} giờ${w.length > 1 ? ` · và ${w.length - 1} lời thách khác` : ''}</div></div></div>
+    <div class="row-wrap"><button class="btn seal grow" data-act="duelplay" data-id="${d.id}">⚔️ Nhận lời</button><button class="btn" data-act="go" data-v="duel" data-p='${JSON.stringify({ id: d.id })}'>Xem</button></div></section>`;
+}
+ACT.duelpick = () => {
+  const others = Object.keys(S.accounts).filter(u => u !== S.me.u);
+  if (!others.length) return toast('Nhóm chưa có bạn nào khác để thách đấu.');
+  if (others.length === 1) return ACT.duelnew({ u: others[0] });
+  openSheet(`<div class="row between"><h2>Thách đấu ai?</h2><button class="icon-btn" data-act="sheet-close" aria-label="Đóng">✕</button></div>
+    <div class="list">${others.map(u => `<button class="li" data-act="duelnew" data-u="${esc(u)}"><span class="avatar sm">${esc(memberAv(u))}</span><span class="grow lt">${esc(memberName(u))}</span><span class="chev">›</span></button>`).join('')}</div>`);
+};
+ACT.duelnew = d => {
+  const u = d.u; const theirs = (S.players[u] && S.players[u].lv) || 1;
+  duelPickLv = clamp(Math.min(S.P.level || 1, theirs), 1, 6);
+  closeSheet();
+  openSheet(`<div class="row between"><h2>Thách đấu ${esc(memberName(u))}</h2><button class="icon-btn" data-act="sheet-close" aria-label="Đóng">✕</button></div>
+    <p class="small muted">Chọn cấp độ câu hỏi. Gợi ý: cấp thấp hơn trong hai người (${esc(memberName(u))} đang ở HSK ${theirs}).</p>
+    <div class="row-wrap" id="duel-lv">${[1, 2, 3, 4, 5, 6].map(l => `<button class="chip ${l === duelPickLv ? 'on' : ''}" data-act="duellv" data-l="${l}">HSK ${l}</button>`).join('')}</div>
+    <button class="btn seal block" data-act="duelgo" data-u="${esc(u)}">⚔️ Bắt đầu – làm 10 câu ngay</button>
+    <p class="tiny muted">${esc(memberName(u))} sẽ thấy lời thách ở Trang chủ và trong trò chuyện nhóm.</p>`);
+};
+ACT.duellv = d => { duelPickLv = +d.l; $$('#duel-lv .chip').forEach(b => b.classList.toggle('on', +b.dataset.l === duelPickLv)); };
+ACT.duelgo = async d => {
+  const u = d.u, lv = duelPickLv || 1, id = 'd_' + randId(10);
+  const doc = { kind: 'duel', id, from: S.me.u, to: u, lv, n: DUEL_N, seed: Math.floor(Math.random() * 1e9), created: Date.now() };
+  try {
+    if (lv >= 3) await ensureUpper();
+    await S.cap.db.doc('arena/' + id).set(doc);
+    S.duels = { ...(S.duels || {}), [id]: doc };
+    closeSheet();
+    S.cap.db.collection('msgs').add({ u: S.me.u, t: `⚔️ Mình vừa thách đấu ${memberName(u)} (HSK ${lv}, ${DUEL_N} câu). ${memberName(u)} vào Trang chủ hoặc Nhóm để nhận lời nhé!`, at: Date.now() }).catch(() => { });
+    ACT.duelplay({ id });
+  } catch (e) { toast('Không tạo được trận thách đấu. Kiểm tra mạng rồi thử lại.'); }
+};
+ACT.duelplay = async d => {
+  const du = S.duels && S.duels[d.id]; if (!du) return toast('Không tìm thấy trận đấu.');
+  if (duelRes(du, S.me.u)) return go('duel', { id: du.id });
+  if (duelState(du) !== 'open') return toast('Trận này đã kết thúc.');
+  const pool = await wordPool(du.lv);
+  const qs = arenaQs(du.seed, du.lv, du.n, pool.length > 30 ? pool : [...BYLV[1], ...BYLV[2]]);
+  const t0 = Date.now(); let sent = false;
+  const send = (s, t, quit) => { if (sent) return; sent = true; const r = { s, t, at: Date.now() }; if (quit) r.quit = 1; du['r_' + S.me.u] = r; S.cap.db.doc('arena/' + du.id).update({ ['r_' + S.me.u]: r }).catch(() => toast('Chưa gửi được kết quả, kiểm tra mạng.')); dqTrack('duel'); duelSettle(); };
+  startQuiz(qs, {
+    title: 'Thách đấu ' + memberName(duelOpp(du)), fast: true,
+    onDone: (sc, Qz) => { send(Qz.ok, Date.now() - t0); const xp = Qz.ok; addXP(xp); return xp; },
+    onQuit: () => { send(Q ? Q.ok : 0, Date.now() - t0 + 600000, true); },
+    resultHtml: () => { const o = duelOpp(du), his = duelRes(du, o); const mine = duelRes(du, S.me.u); if (!his) return `<p class="small">Đã gửi kết quả. Đang chờ <b>${esc(memberName(o))}</b> làm bài – bạn sẽ được báo khi có kết quả.</p>`; const w = duelWinner(du); return `<p><b>${w === S.me.u ? '🏆 Bạn thắng!' : w === null ? 'Hoà!' : esc(memberName(o)) + ' thắng'}</b> · ${mine ? mine.s : 0} – ${his.s} (${esc(memberName(o))} ${(his.t / 1000).toFixed(1)}s)</p>`; },
+    onExit: () => go('duel', { id: du.id }, { replace: true }),
+  });
+};
+ACT.dueldecline = async d => {
+  try { await S.cap.db.doc('arena/' + d.id).update({ x: 'no' }); toast('Đã từ chối lời thách đấu.'); } catch { toast('Không gửi được.'); }
+  tab('group');
+};
+ACT.duelagain = d => { const du = S.duels[d.id]; if (!du) return; duelPickLv = du.lv; ACT.duelgo({ u: duelOpp(du) }); };
+VIEWS.duel = ({ id }) => {
+  const d = S.duels && S.duels[id];
+  if (!d) return { title: 'Thách đấu', html: `<div class="stack"><p class="muted">Không tìm thấy trận đấu (có thể đã được dọn sau 30 ngày).</p><button class="btn" data-act="tab" data-v="group">Về trang Nhóm</button></div>` };
+  const me = S.me.u, o = duelOpp(d), st = duelState(d), mine = duelRes(d, me), his = duelRes(d, o), w = duelWinner(d);
+  const side = (u, r, hide) => `<div class="duel-side ${st === 'done' && w === u ? 'win' : ''}"><span class="avatar">${esc(memberAv(u))}</span><b>${u === me ? 'Bạn' : esc(memberName(u))}</b><div class="duel-score num">${r ? (hide ? '✓' : r.s) : '–'}</div><div class="tiny muted">${r ? (hide ? 'đã làm xong' : (r.quit ? 'bỏ dở giữa chừng' : (r.t / 1000).toFixed(1) + ' giây')) : 'chưa làm'}</div>${st === 'done' && w === u ? '<div class="tiny" style="color:var(--gold)">🏆 Thắng</div>' : ''}</div>`;
+  const h = h2h(o);
+  return {
+    title: 'Thách đấu', sub: `HSK ${d.lv} · ${d.n} câu · ${d.from === me ? 'bạn thách ' + memberName(o) : memberName(o) + ' thách bạn'}`, html: `<div class="stack-lg">
+    <div class="card"><div class="duel-vs">${side(me, mine, false)}<div class="vs">VS</div>${side(o, his, !mine && st === 'open')}</div>
+      <p class="small muted" style="text-align:center;margin-top:10px">${st === 'done' ? (w === null ? 'Hoà – bằng điểm và bằng thời gian.' : `${w === me ? 'Bạn' : esc(memberName(o))} thắng${mine.s === his.s ? ' nhờ làm nhanh hơn' : ''}.`) : st === 'open' ? (mine ? `Đang chờ ${esc(memberName(o))} làm bài (còn ${Math.max(1, Math.ceil((d.created + DUEL_TTL - Date.now()) / 3600e3))} giờ).` : 'Điểm của đối thủ sẽ hiện sau khi bạn làm xong.') : st === 'declined' ? (d.to === me ? 'Bạn đã từ chối lời thách này.' : `${esc(memberName(o))} đã từ chối.`) : 'Trận đã hết hạn sau 3 ngày.'}</p></div>
+    ${st === 'open' && !mine ? `<button class="btn seal block" data-act="duelplay" data-id="${d.id}">⚔️ ${d.to === me ? 'Nhận lời và' : ''} Làm 10 câu</button>${d.to === me ? `<button class="btn ghost block" data-act="dueldecline" data-id="${d.id}">Từ chối</button>` : ''}` : ''}
+    ${st !== 'open' ? `<button class="btn primary block" data-act="duelagain" data-id="${d.id}">Thách đấu lại ${esc(memberName(o))}</button>` : ''}
+    <p class="small muted" style="text-align:center">Đối đầu với ${esc(memberName(o))}: <b>${h.w}</b> thắng · <b>${h.l}</b> thua${h.d ? ` · ${h.d} hoà` : ''}</p>
+    <button class="btn block" data-act="tab" data-v="group">Về trang Nhóm</button>
+  </div>` };
+};
 /* ================= KHỞI ĐỘNG ================= */
 function onClick(e) {
   const el = e.target.closest('[data-act]'); if (!el) return;
@@ -2389,7 +2680,7 @@ function startLive() {
   const db = S.cap.db; const u = S.me.u;
   db.collection('players').onSnapshot(snap => {
     const p = {}; snap.docs.forEach(d => p[d.id] = d.data()); S.players = p;
-    const mine = p[u]; if (mine && S.pub) { let ch = false; for (const k of ['wins', 'matches']) if ((mine[k] || 0) > (S.pub[k] || 0)) { S.pub[k] = mine[k]; ch = true; } if (mine.blitz && (mine.blitz.best || 0) > ((S.pub.blitz && S.pub.blitz.best) || 0)) { S.pub.blitz = Object.assign({}, S.pub.blitz, { best: mine.blitz.best }); ch = true; } if (ch) savePub(); }
+    const mine = p[u]; if (mine && S.pub) { let ch = false; for (const k of ['wins', 'matches', 'dw', 'dl', 'dd', 'dqN']) if ((mine[k] || 0) > (S.pub[k] || 0)) { S.pub[k] = mine[k]; ch = true; } if (mine.blitz && (mine.blitz.best || 0) > ((S.pub.blitz && S.pub.blitz.best) || 0)) { S.pub.blitz = Object.assign({}, S.pub.blitz, { best: mine.blitz.best }); ch = true; } if ((mine.dq || 0) > (S.pub.dq || 0)) { S.pub.dq = mine.dq; ch = true; } if (ch) savePub(); }
     if (S.view === 'group') { const b = $('#board'); if (b) b.innerHTML = boardRows(); }
   }, () => { });
   db.collection('msgs').orderBy('at', 'desc').limit(50).onSnapshot(snap => {
@@ -2406,6 +2697,7 @@ function startLive() {
     if (S.arena && S.arena.state === 'play' && prev && prev.state === 'lobby' && arenaRes[u] && S.view !== 'quiz') go('arena');
     updateDots();
   }, () => { });
+  watchDuels();
   db.doc('srs/' + u).onSnapshot(s => { if (!s.exists || s.metadata.hasPendingWrites) return; const d = s.data(); if (d && d.cards && mergeSrs(d.cards)) updateDots(); }, () => { });
   db.doc('progress/' + u).onSnapshot(s => {
     if (!s.exists || s.metadata.hasPendingWrites) return; const r = s.data(); if (!r) return;
