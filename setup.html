@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cài đặt Hán Ngữ Cùng Nhau</title>
+<meta name="theme-color" content="#c0392b">
+<link rel="icon" type="image/png" href="icons/favicon-48.png">
+<style>
+:root { --paper:#f3f6f4; --surface:#fff; --ink:#15201c; --muted:#5b6a64; --line:#d6dfdb; --jade:#0b7a5e; --jade-soft:#dcefe8; --seal:#c0392b; --gold-soft:#f5ead0; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --paper:#0d1412; --surface:#151f1c; --ink:#e3ece8; --muted:#93a39c; --line:#283632; --jade:#35b98f; --jade-soft:#15362c; --seal:#ef6a55; --gold-soft:#3a2f14; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.wrap { max-width: 680px; margin: 0 auto; padding: 20px max(16px, env(safe-area-inset-right, 0px)) 60px max(16px, env(safe-area-inset-left, 0px)); }
+h1 { font-size: 24px; line-height: 1.25; margin: 8px 0 4px; }
+h2 { font-size: 19px; margin: 28px 0 10px; display: flex; gap: 10px; align-items: center; }
+h2 .n { width: 30px; height: 30px; border-radius: 8px; background: var(--seal); color: #fff; display: grid; place-items: center; font-size: 16px; flex: none; }
+ol { padding-left: 22px; margin: 0; } li { margin: 6px 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.muted { color: var(--muted); font-size: 14px; }
+b.k { background: var(--jade-soft); color: var(--jade); padding: 0 6px; border-radius: 6px; font-weight: 700; }
+pre { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; overflow-x: auto; font-size: 12px; line-height: 1.45; max-height: 320px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 12px; background: var(--jade); color: #fff; font: inherit; font-weight: 700; padding: 12px 16px; min-height: 46px; text-decoration: none; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--jade); border: 1px solid var(--line); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.note { background: var(--gold-soft); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+a { color: var(--jade); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cài đặt trang học cho nhóm</h1>
+  <p class="muted">Dành cho chủ nhóm. Làm một lần, khoảng 10–15 phút trên điện thoại. Tất cả đều miễn phí, không cần thẻ ngân hàng.</p>
+
+  <h2><span class="n">1</span>Tạo dự án Firebase</h2>
+  <div class="card"><ol>
+    <li>Mở <a href="https://console.firebase.google.com/" target="_blank" rel="noopener">console.firebase.google.com</a>, đăng nhập bằng Gmail.</li>
+    <li>Chạm <b class="k">Tạo dự án</b> (Create a project), đặt tên ví dụ <b>hanngu</b>. Tắt Google Analytics rồi tạo dự án.</li>
+    <li>Ở menu bên trái chọn <b class="k">Bảo mật / Security → Authentication</b> (có giao diện ghi là Build → Authentication) → <b>Bắt đầu</b> → thẻ <b>Phương thức đăng nhập</b> → <b>Email/Mật khẩu</b> → bật dòng đầu tiên → <b>Lưu</b>.</li>
+    <li>Chọn <b class="k">Firestore Database</b> → <b>Tạo cơ sở dữ liệu</b> → vị trí <b>asia-southeast1 (Singapore)</b> → chọn chế độ <b>sản xuất (production)</b> → Tạo.</li>
+  </ol></div>
+
+  <h2><span class="n">2</span>Dán luật bảo mật</h2>
+  <div class="card">
+    <p style="margin-top:0">Trong Firestore, mở thẻ <b class="k">Quy tắc / Rules</b>, xoá hết nội dung cũ, dán đoạn dưới đây rồi chạm <b>Xuất bản / Publish</b>. Luật này chỉ cho thành viên có mã mời vào nhóm, tối đa 5 người.</p>
+    <div class="row"><button class="btn" id="copy-rules">Sao chép luật bảo mật</button></div>
+    <pre id="rules">rules_version = &#x27;2&#x27;;
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isMember() { return signedIn() &amp;&amp; exists(/databases/$(database)/documents/accounts/$(request.auth.uid)); }
+    function isOwner() { return signedIn() &amp;&amp; get(/databases/$(database)/documents/config/secret).data.owner == request.auth.uid; }
+    function isMe(u) { return signedIn() &amp;&amp; request.auth.uid == u; }
+
+    // Thông tin công khai của nhóm: số thành viên, tên nhóm
+    match /config/public {
+      allow read: if true;
+      allow create: if signedIn()
+        &amp;&amp; request.resource.data.owner == uid()
+        &amp;&amp; request.resource.data.members == 1
+        &amp;&amp; getAfter(/databases/$(database)/documents/config/secret).data.owner == uid();
+      allow update: if isOwner()
+        || (signedIn()
+            &amp;&amp; request.resource.data.diff(resource.data).affectedKeys().hasOnly([&#x27;members&#x27;])
+            &amp;&amp; request.resource.data.members == resource.data.members + 1
+            &amp;&amp; request.resource.data.members &lt;= resource.data.max
+            &amp;&amp; !exists(/databases/$(database)/documents/accounts/$(request.auth.uid))
+            &amp;&amp; existsAfter(/databases/$(database)/documents/accounts/$(request.auth.uid)));
+    }
+
+    // Mã mời, khoá Gemini: chỉ thành viên đọc được, chỉ chủ nhóm sửa được
+    match /config/secret {
+      allow read: if isMember();
+      allow create: if signedIn()
+        &amp;&amp; request.resource.data.owner == uid()
+        &amp;&amp; !exists(/databases/$(database)/documents/config/public);
+      allow update: if isOwner() &amp;&amp; request.resource.data.owner == resource.data.owner;
+    }
+
+    // Tài khoản: tạo khi có đúng mã mời (hoặc là người lập nhóm)
+    match /accounts/{u} {
+      allow read: if isMember();
+      allow create: if isMe(u)
+        &amp;&amp; request.resource.data.invite == getAfter(/databases/$(database)/documents/config/secret).data.invite
+        &amp;&amp; ((exists(/databases/$(database)/documents/config/public)
+             &amp;&amp; getAfter(/databases/$(database)/documents/config/public).data.members
+                == get(/databases/$(database)/documents/config/public).data.members + 1)
+          || (!exists(/databases/$(database)/documents/config/public)
+             &amp;&amp; getAfter(/databases/$(database)/documents/config/public).data.members == 1));
+      allow update: if isMe(u) &amp;&amp; request.resource.data.invite == resource.data.invite;
+      allow delete: if isOwner();
+    }
+
+    match /progress/{u} { allow read, write: if isMe(u) &amp;&amp; isMember(); }
+    match /srs/{u} { allow read, write: if isMe(u) &amp;&amp; isMember(); }
+    match /players/{u} {
+      allow read: if isMember();
+      allow write: if isMe(u) &amp;&amp; isMember();
+      allow delete: if isOwner();
+    }
+    match /presence/{u} {
+      allow read: if isMember();
+      allow write: if isMe(u) &amp;&amp; isMember();
+      allow delete: if isOwner();
+    }
+    match /msgs/{id} {
+      allow read: if isMember();
+      allow create: if isMember() &amp;&amp; request.resource.data.u == uid() &amp;&amp; request.resource.data.t is string &amp;&amp; request.resource.data.t.size() &lt;= 500;
+      allow delete: if isMember();
+    }
+    match /meet/{id} { allow read, write: if isMember(); }
+    match /arena/{id} { allow read, write: if isMember(); }
+    match /vocabai/{id} { allow read, write: if isMember(); }
+    match /matches/{m}/r/{u} {
+      allow read: if isMember();
+      allow write: if isMe(u) &amp;&amp; isMember();
+    }
+  }
+}
+</pre>
+  </div>
+
+  <h2><span class="n">3</span>Lấy cấu hình web</h2>
+  <div class="card"><ol>
+    <li>Chạm biểu tượng bánh răng → <b class="k">Cài đặt dự án</b> (Project settings).</li>
+    <li>Kéo xuống mục <b>Ứng dụng của bạn</b> → chạm biểu tượng <b>&lt;/&gt;</b> (Web) → đặt tên <b>web</b> → <b>Đăng ký ứng dụng</b> (không cần chọn Hosting).</li>
+    <li>Sao chép đoạn <code>const firebaseConfig = { … }</code> và gửi cho Claude trong cuộc trò chuyện. Các giá trị này là định danh công khai của dự án, gửi đi không sao.</li>
+  </ol></div>
+
+  <h2><span class="n">4</span>Lập nhóm và nhập khoá AI</h2>
+  <div class="card"><ol>
+    <li>Khi trang đã có cấu hình, mở trang học và chọn <b class="k">Lập nhóm mới</b>. Người đầu tiên là <b>chủ nhóm</b> và nhận <b>mã mời</b>.</li>
+    <li>Mở <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> → <b>Create API key</b> → sao chép khoá (bắt đầu bằng <code>AIza</code>).</li>
+    <li>Trong trang học, chạm ảnh đại diện góc trên → <b class="k">Quản lý nhóm</b> → dán khoá Gemini → <b>Lưu khoá</b>. Như Yên sẽ trò chuyện và gọi thoại được.</li>
+    <li>Gửi đường liên kết trang học và mã mời cho 4 người còn lại. Mỗi người chọn <b>Tạo tài khoản</b> và nhập mã mời.</li>
+  </ol></div>
+
+  <h2><span class="n">5</span>Cài lên màn hình điện thoại</h2>
+  <div class="card"><p style="margin:0"><b>Android (Chrome):</b> mở trang → menu ⋮ → <b>Thêm vào màn hình chính</b> / <b>Cài đặt ứng dụng</b>.<br><b>iPhone (Safari):</b> nút Chia sẻ → <b>Thêm vào MH chính</b>.<br>Trang sẽ mở như một ứng dụng riêng, có biểu tượng chữ 汉.</p></div>
+
+  <div class="note" style="margin-top:24px"><b>Quên mật khẩu?</b> Chủ nhóm vào Cài đặt → Quản lý thành viên → Xoá tài khoản đó, bấm “Đổi mã mời”, rồi người kia đăng ký lại bằng tên đăng nhập mới. Tài khoản cũ có thể xoá hẳn trong Firebase → Authentication → Users.</div>
+  <div class="row" style="margin-top:20px"><a class="btn ghost" href="./">← Về trang học</a></div>
+</div>
+<script>
+document.getElementById('copy-rules').addEventListener('click', async e => {
+  const t = document.getElementById('rules').textContent;
+  try { await navigator.clipboard.writeText(t); e.target.textContent = 'Đã sao chép ✓'; }
+  catch { const r = document.createRange(); r.selectNodeContents(document.getElementById('rules')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); e.target.textContent = 'Đã chọn – bấm giữ để sao chép'; }
+});
+</script>
+</body>
+</html>

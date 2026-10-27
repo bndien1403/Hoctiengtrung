@@ -1,0 +1,17 @@
+{
+  "name": "Hán Ngữ Cùng Nhau",
+  "short_name": "Hán Ngữ",
+  "description": "Nhóm học tiếng Trung: Pinyin đến HSK 6, ôn tập, gọi thoại với Cô Mai AI và thi đấu.",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f6f4",
+  "theme_color": "#c0392b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

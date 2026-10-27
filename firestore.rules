@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isMember() { return signedIn() && exists(/databases/$(database)/documents/accounts/$(request.auth.uid)); }
+    function isOwner() { return signedIn() && get(/databases/$(database)/documents/config/secret).data.owner == request.auth.uid; }
+    function isMe(u) { return signedIn() && request.auth.uid == u; }
+
+    // Thông tin công khai của nhóm: số thành viên, tên nhóm
+    match /config/public {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.owner == uid()
+        && request.resource.data.members == 1
+        && getAfter(/databases/$(database)/documents/config/secret).data.owner == uid();
+      allow update: if isOwner()
+        || (signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+            && request.resource.data.members == resource.data.members + 1
+            && request.resource.data.members <= resource.data.max
+            && !exists(/databases/$(database)/documents/accounts/$(request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/accounts/$(request.auth.uid)));
+    }
+
+    // Mã mời, khoá Gemini: chỉ thành viên đọc được, chỉ chủ nhóm sửa được
+    match /config/secret {
+      allow read: if isMember();
+      allow create: if signedIn()
+        && request.resource.data.owner == uid()
+        && !exists(/databases/$(database)/documents/config/public);
+      allow update: if isOwner() && request.resource.data.owner == resource.data.owner;
+    }
+
+    // Tài khoản: tạo khi có đúng mã mời (hoặc là người lập nhóm)
+    match /accounts/{u} {
+      allow read: if isMember();
+      allow create: if isMe(u)
+        && request.resource.data.invite == getAfter(/databases/$(database)/documents/config/secret).data.invite
+        && ((exists(/databases/$(database)/documents/config/public)
+             && getAfter(/databases/$(database)/documents/config/public).data.members
+                == get(/databases/$(database)/documents/config/public).data.members + 1)
+          || (!exists(/databases/$(database)/documents/config/public)
+             && getAfter(/databases/$(database)/documents/config/public).data.members == 1));
+      allow update: if isMe(u) && request.resource.data.invite == resource.data.invite;
+      allow delete: if isOwner();
+    }
+
+    match /progress/{u} { allow read, write: if isMe(u) && isMember(); }
+    match /srs/{u} { allow read, write: if isMe(u) && isMember(); }
+    match /players/{u} {
+      allow read: if isMember();
+      allow write: if isMe(u) && isMember();
+      allow delete: if isOwner();
+    }
+    match /presence/{u} {
+      allow read: if isMember();
+      allow write: if isMe(u) && isMember();
+      allow delete: if isOwner();
+    }
+    match /msgs/{id} {
+      allow read: if isMember();
+      allow create: if isMember() && request.resource.data.u == uid() && request.resource.data.t is string && request.resource.data.t.size() <= 500;
+      allow delete: if isMember();
+    }
+    match /meet/{id} { allow read, write: if isMember(); }
+    match /arena/{id} { allow read, write: if isMember(); }
+    match /vocabai/{id} { allow read, write: if isMember(); }
+    match /matches/{m}/r/{u} {
+      allow read: if isMember();
+      allow write: if isMe(u) && isMember();
+    }
+  }
+}
