@@ -376,9 +376,9 @@ details.box summary { font-weight: 700; cursor: pointer; }
 <div id="sheet-root"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 <input type="file" id="rec-input" accept="audio/*" capture hidden>
-<script src="config.js?v=202610271939"></script>
-<script src="platform.js?v=202610271939"></script>
-<script>window.HN_VERSION="202610271939";
+<script src="config.js?v=202610271954"></script>
+<script src="platform.js?v=202610271954"></script>
+<script>window.HN_VERSION="202610271954";
 'use strict';
 /* ================= tiện ích ================= */
 const $ = (s, r = document) => r.querySelector(s);
@@ -532,7 +532,7 @@ function defaultProg() {
   return {
     goal: 50, daily: {}, lessons: {}, cur: null, level: 1, placement: null, badges: {},
     settings: { rate: 0.85, showPy: true, showVi: true, autoplay: true, aiVi: false, aiTier: 'quick', autosend: false, front: 'han' },
-    lastMatch: null, aiDay: {},
+    lastMatch: null, aiDay: {}, xpBase: 0, at: 0, setAt: 0, ai: null,
   };
 }
 function defaultPub(me) { return { name: me.name, av: me.av, xp: 0, wk: {}, daily: {}, streak: 0, last: 0, known: 0, lv: 1, wins: 0, matches: 0, blitz: { best: 0, wk: {} }, at: Date.now() }; }
@@ -568,24 +568,57 @@ async function readDoc(path) {
   if (S.cap.db && !S.local) { try { const s = await S.cap.db.doc(path).get(); return s.exists ? s.data() : null; } catch (e) { console.warn(e); return null; } }
   return LS.get('doc:' + path, null);
 }
-const saveProg = () => S.me && schedule('progress/' + S.me.u, () => S.P);
+const saveProg = () => { if (!S.me || !S.P) return; S.P.at = Date.now(); schedule('progress/' + S.me.u, () => S.P); };
+const saveSettings = () => { if (S.P) S.P.setAt = Date.now(); saveProg(); };
 const saveSrs = () => S.me && schedule('srs/' + S.me.u, () => ({ cards: S.srs, at: Date.now() }), 2000);
 const savePub = () => S.me && schedule('players/' + S.me.u, () => S.pub, 1500);
 
 /* ================= điểm kinh nghiệm & chuỗi ngày ================= */
 function todayXP() { return (S.P && S.P.daily[dayKey()]) || 0; }
 function streakNow() { if (!S.pub) return 0; const t = dayNum(); return S.pub.last >= t - 1 ? S.pub.streak : 0; }
+// Điểm công khai (tổng XP, XP tuần, chuỗi ngày) luôn được TÍNH LẠI từ lịch sử XP theo ngày trong tiến độ,
+// nên dù học trên nhiều thiết bị, chỉ cần gộp lịch sử theo ngày là mọi con số khớp nhau.
+function derivePub() {
+  if (!S.P || !S.pub) return;
+  const t = dayNum(), daily = S.P.daily || {};
+  const keys = Object.keys(daily).sort(); while (keys.length > 400) { const k0 = keys.shift(); S.P.xpBase = (S.P.xpBase || 0) + (daily[k0] || 0); delete daily[k0]; }
+  const toNum = k => Math.floor(Date.parse(k + 'T00:00:00Z') / 864e5);
+  let total = S.P.xpBase || 0; const wk = {};
+  for (const [k, v] of Object.entries(daily)) { total += v; const w = weekKey(toNum(k)); if (+w.slice(1) >= weekStart(t) - 7) wk[w] = (wk[w] || 0) + v; }
+  let last = 0, streak = 0;
+  if (daily[dayKey(t)]) last = t; else if (daily[dayKey(t - 1)]) last = t - 1;
+  if (last) { let d = last; while (daily[dayKey(d)]) { streak++; d--; } }
+  else { const ks = Object.keys(daily).filter(k => daily[k]).sort(); if (ks.length) { last = toNum(ks[ks.length - 1]); let d = last; while (daily[dayKey(d)]) { streak++; d--; } } }
+  const d14 = {}; for (let i = 13; i >= 0; i--) { const kk = dayKey(t - i); if (daily[kk]) d14[kk] = daily[kk]; }
+  Object.assign(S.pub, { xp: total, wk, streak, last, daily: d14, lv: S.P.level, at: Date.now() });
+}
+// Gộp tiến độ từ thiết bị khác (hoặc từ máy chủ) vào máy này mà không làm mất dữ liệu
+function mergeProgress(r) {
+  if (!r || !S.P) return false;
+  const P = S.P; let ch = false;
+  for (const [k, v] of Object.entries(r.daily || {})) if ((P.daily[k] || 0) < v) { P.daily[k] = v; ch = true; }
+  for (const [k, v] of Object.entries(r.lessons || {})) if (!P.lessons[k] || P.lessons[k].s < v.s) { P.lessons[k] = v; ch = true; }
+  for (const [k, v] of Object.entries(r.badges || {})) if ((P.badges[k] || 0) < v) { P.badges[k] = v; ch = true; }
+  for (const [k, v] of Object.entries(r.aiDay || {})) if (((P.aiDay || {})[k] || 0) < v) { P.aiDay = { ...(P.aiDay || {}), [k]: v }; }
+  if ((r.xpBase || 0) > (P.xpBase || 0)) { P.xpBase = r.xpBase; ch = true; }
+  if (r.placement && (!P.placement || (r.placement.at || 0) > (P.placement.at || 0))) { P.placement = r.placement; ch = true; }
+  if ((r.setAt || 0) > (P.setAt || 0)) {
+    const keepVoice = { voice_zh: P.settings.voice_zh, voice_vi: P.settings.voice_vi };
+    P.settings = Object.assign({}, P.settings, r.settings || {}, keepVoice);
+    if (r.goal) P.goal = r.goal; if (r.level) P.level = r.level;
+    P.setAt = r.setAt; ch = true;
+  } else if ((r.level || 1) > (P.level || 1) && (r.at || 0) > (P.at || 0)) { P.level = r.level; ch = true; }
+  if (r.cur && (r.at || 0) > (P.at || 0) && r.cur !== P.cur) { P.cur = r.cur; ch = true; }
+  if (r.lastMatch && r.lastMatch !== P.lastMatch && (r.at || 0) > (P.at || 0)) P.lastMatch = r.lastMatch;
+  if (r.ai && (!P.ai || (r.ai.at || 0) > (P.ai.at || 0))) { P.ai = r.ai; ch = true; if (typeof onRemoteAI === 'function') onRemoteAI(); }
+  if (ch) derivePub();
+  return ch;
+}
 function addXP(n) {
   if (!S.P || !n) return;
   const t = dayNum(), k = dayKey(t), wk = weekKey(t);
   S.P.daily[k] = (S.P.daily[k] || 0) + n;
-  const keys = Object.keys(S.P.daily).sort(); while (keys.length > 60) delete S.P.daily[keys.shift()];
-  const p = S.pub;
-  p.xp += n; p.wk[wk] = (p.wk[wk] || 0) + n;
-  const wks = Object.keys(p.wk).sort((a, b) => +a.slice(1) - +b.slice(1)); while (wks.length > 8) delete p.wk[wks.shift()];
-  if (p.last !== t) { p.streak = p.last === t - 1 ? p.streak + 1 : 1; p.last = t; }
-  const d = {}; for (let i = 13; i >= 0; i--) { const kk = dayKey(t - i); if (S.P.daily[kk]) d[kk] = S.P.daily[kk]; } p.daily = d;
-  p.at = Date.now(); p.lv = S.P.level;
+  derivePub();
   saveProg(); savePub(); updateTop();
   const el = document.querySelector('[data-xp-pill]'); if (el) { el.animate?.([{ transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 400 }); }
 }
@@ -1276,7 +1309,7 @@ function dialogById(id) { return D.core.dialogues.find(d => d.id === id); }
 function dispCls() { const s = S.P.settings; return `${s.showPy ? '' : 'hide-py'} ${s.showVi ? '' : 'hide-vi'} ${s.hideHan ? 'hide-han' : ''}`; }
 function dispToggles() { const s = S.P.settings; return `<div class="row-wrap"><button class="chip ${s.hideHan ? '' : 'on'}" data-act="disp" data-k="hideHan">汉字</button><button class="chip ${s.showPy ? 'on' : ''}" data-act="disp" data-k="showPy">Pinyin</button><button class="chip ${s.showVi ? 'on' : ''}" data-act="disp" data-k="showVi">Tiếng Việt</button></div>`; }
 function speedCtl() { return `<div class="speed"><span class="small muted">Tốc độ</span><input type="range" min="0.5" max="1.2" step="0.05" value="${S.P.settings.rate}" data-in="rate" aria-label="Tốc độ đọc" id="rate-in"><span class="small num" id="rate-v">${S.P.settings.rate.toFixed(2)}×</span></div>`; }
-ACT.disp = d => { const s = S.P.settings; s[d.k] = !s[d.k]; saveProg(); render({ keepScroll: true }); };
+ACT.disp = d => { const s = S.P.settings; s[d.k] = !s[d.k]; saveSettings(); render({ keepScroll: true }); };
 VIEWS.dialog = ({ id, lesson }) => {
   const d = dialogById(id); if (!d) return { html: '' };
   return {
@@ -1417,7 +1450,7 @@ ACT.plstart = () => {
     onDone: () => {
       let lv = 0; for (let l = 1; l <= 5; l++) { const p = per[l]; if (p && p[0] / p[1] >= .6) lv = l; else break; }
       const start = clamp(lv + 1, 1, 6);
-      S.P.placement = { lv: lv === 0 ? 0 : start, at: Date.now(), per }; S.P.level = start;
+      S.P.placement = { lv: lv === 0 ? 0 : start, at: Date.now(), per }; S.P.level = start; S.P.setAt = Date.now();
       const tr = trackOf(lv === 0 ? 'py' : 'h' + start); if (tr) S.P.cur = tr.items[0];
       saveProg(); addXP(10); return 10;
     },
@@ -1455,7 +1488,7 @@ ACT.vf = d => { VQ.f = d.f; VQ.n = 40; render({ keepScroll: true }); };
 ACT.vmore = () => { VQ.n += 60; $('#vlist').innerHTML = vocabResultsHTML(); };
 const INPUTS = {};
 INPUTS.vsearch = el => { VQ.q = el.value; VQ.n = 40; clearTimeout(INPUTS._vt); INPUTS._vt = setTimeout(() => { const l = $('#vlist'); if (l) l.innerHTML = vocabResultsHTML(); }, 160); };
-INPUTS.rate = el => { S.P.settings.rate = +el.value; const v = $('#rate-v'); if (v) v.textContent = (+el.value).toFixed(2) + '×'; saveProg(); };
+INPUTS.rate = el => { S.P.settings.rate = +el.value; const v = $('#rate-v'); if (v) v.textContent = (+el.value).toFixed(2) + '×'; saveSettings(); };
 
 async function openWord(s) { if (!WORDS.has(s)) await ensureUpper(); go('word', { s }); }
 VIEWS.word = ({ s }) => {
@@ -1726,7 +1759,7 @@ VIEWS.review = () => {
     <div class="card stack"><div class="eyebrow">Mặt trước thẻ</div><div class="seg"><button class="${S.P.settings.front === 'han' ? 'on' : ''}" data-act="front" data-f="han">Chữ Hán</button><button class="${S.P.settings.front === 'vi' ? 'on' : ''}" data-act="front" data-f="vi">Nghĩa Việt</button><button class="${S.P.settings.front === 'audio' ? 'on' : ''}" data-act="front" data-f="audio">Âm thanh</button></div></div>
   </div>` };
 };
-ACT.front = d => { S.P.settings.front = d.f; saveProg(); render({ keepScroll: true }); };
+ACT.front = d => { S.P.settings.front = d.f; saveSettings(); render({ keepScroll: true }); };
 const FL = { list: [], i: 0, flip: false, n: 0, again: new Set() };
 ACT.flash = async d => {
   let list;
@@ -1784,8 +1817,15 @@ const SCENES = {
 };
 let AIC = null, aiBusy = false, aiCtl = null, aiPartial = '', aiLang = 'zh', aiSendT = 0;
 function aiKey() { return 'aichat2:' + (S.me ? S.me.u : 'x'); }
-function aiLoad() { if (!AIC) AIC = LS.get(aiKey(), null) || { scene: 'free', msgs: [] }; if (!AIC.msgs.length) aiStarter(); return AIC; }
-function aiSaveLocal() { AIC.msgs = AIC.msgs.slice(-40); LS.set(aiKey(), AIC); }
+function aiLoad() {
+  if (!AIC) { const r = S.P && S.P.ai; AIC = r && r.msgs ? { scene: r.scene || 'free', msgs: r.msgs.slice() } : (LS.get(aiKey(), null) || { scene: 'free', msgs: [] }); }
+  if (!AIC.msgs.length) aiStarter(); return AIC;
+}
+function aiSaveLocal() {
+  AIC.msgs = AIC.msgs.slice(-40); LS.set(aiKey(), AIC);
+  if (S.P) { S.P.ai = { scene: AIC.scene, msgs: AIC.msgs.slice(-30), at: Date.now() }; saveProg(); }
+}
+function onRemoteAI() { if (aiBusy) return; const r = S.P.ai; AIC = { scene: r.scene || 'free', msgs: (r.msgs || []).slice() }; LS.set(aiKey(), AIC); if (S.view === 'ai') render({ keepScroll: true }); }
 function aiStarter() { const sc = SCENES[AIC.scene] || SCENES.free; AIC.msgs.push({ r: 'a', j: { zh: sc.s[0], py: sc.s[1], vi: sc.s[2], fix: '', note: '' } }); }
 function aiRules() {
   const sc = SCENES[AIC.scene] || SCENES.free; const lv = clamp(S.P.level || 1, 1, 6);
@@ -1845,7 +1885,7 @@ function aiBubble(m, i) {
     <div class="bub-tools"><button class="btn sm ghost" data-act="aisay" data-i="${i}">🔊 Nghe</button><button class="btn sm ghost" data-act="aisay" data-i="${i}" data-slow="1">🐢 Chậm</button>${!s.showVi ? `<button class="btn sm ghost" data-act="aishowvi" data-i="${i}">Nghĩa</button>` : ''}</div></div>`;
 }
 ACT.aiscene = d => { if (S.view !== 'ai') { S.tab = 'ai'; S.stack = []; S.view = 'ai'; } aiLoad(); if (AIC.scene !== d.k) { AIC.scene = d.k; AIC.msgs = []; aiStarter(); aiSaveLocal(); } render(); speakAI(AIC.msgs[AIC.msgs.length - 1].j); };
-ACT.aiopt = d => { S.P.settings[d.k] = !S.P.settings[d.k]; saveProg(); render({ keepScroll: true }); };
+ACT.aiopt = d => { S.P.settings[d.k] = !S.P.settings[d.k]; saveSettings(); render({ keepScroll: true }); };
 ACT.ailang = () => { aiLang = aiLang === 'zh' ? 'vi' : 'zh'; render({ keepScroll: true }); };
 ACT.aiclear = () => { AIC.msgs = []; aiStarter(); aiSaveLocal(); render(); };
 ACT.aistop = () => { if (aiCtl) aiCtl.abort(); };
@@ -2243,9 +2283,9 @@ FORMS.profile = async () => {
   if (S.cap.room) S.cap.room.presence({ name, av }).catch(() => { });
   closeSheet(); render({ keepScroll: true }); toast('Đã lưu hồ sơ');
 };
-ACT.setgoal = d => { S.P.goal = +d.g; saveProg(); ACT.settings(); updateTop(); };
-ACT.setlv = d => { S.P.level = +d.l; saveProg(); ACT.settings(); };
-ACT.settier = d => { S.P.settings.aiTier = d.t; saveProg(); ACT.settings(); };
+ACT.setgoal = d => { S.P.goal = +d.g; saveSettings(); ACT.settings(); updateTop(); };
+ACT.setlv = d => { S.P.level = +d.l; saveSettings(); ACT.settings(); };
+ACT.settier = d => { S.P.settings.aiTier = d.t; saveSettings(); ACT.settings(); };
 INPUTS.voice = el => { S.P.settings['voice_' + el.dataset.l] = el.value; saveProg(); say(el.dataset.l === 'zh' ? '你好' : 'Xin chào', { lang: el.dataset.l }); };
 ACT.rmuser = async (d, el) => {
   if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Chắc chắn xoá?'; el.classList.add('seal'); return; }
@@ -2296,7 +2336,7 @@ function onClick(e) {
   try { const r = fn(el.dataset, el, e); if (r && r.catch) r.catch(err => console.error(err)); } catch (err) { console.error(err); }
 }
 function onInput(e) { const el = e.target.closest('[data-in]'); if (el && INPUTS[el.dataset.in]) INPUTS[el.dataset.in](el, e); }
-INPUTS.tog = el => { S.P.settings[el.dataset.k] = el.checked; saveProg(); };
+INPUTS.tog = el => { S.P.settings[el.dataset.k] = el.checked; saveSettings(); };
 function subscribeAccounts() {
   return new Promise(res => {
     let first = true; const done = () => { if (first) { first = false; res(); } };
@@ -2317,6 +2357,7 @@ function startLive() {
   const db = S.cap.db; const u = S.me.u;
   db.collection('players').onSnapshot(snap => {
     const p = {}; snap.docs.forEach(d => p[d.id] = d.data()); S.players = p;
+    const mine = p[u]; if (mine && S.pub) { let ch = false; for (const k of ['wins', 'matches']) if ((mine[k] || 0) > (S.pub[k] || 0)) { S.pub[k] = mine[k]; ch = true; } if (mine.blitz && (mine.blitz.best || 0) > ((S.pub.blitz && S.pub.blitz.best) || 0)) { S.pub.blitz = Object.assign({}, S.pub.blitz, { best: mine.blitz.best }); ch = true; } if (ch) savePub(); }
     if (S.view === 'group') { const b = $('#board'); if (b) b.innerHTML = boardRows(); }
   }, () => { });
   db.collection('msgs').orderBy('at', 'desc').limit(50).onSnapshot(snap => {
@@ -2336,9 +2377,7 @@ function startLive() {
   db.doc('srs/' + u).onSnapshot(s => { if (!s.exists || s.metadata.hasPendingWrites) return; const d = s.data(); if (d && d.cards && mergeSrs(d.cards)) updateDots(); }, () => { });
   db.doc('progress/' + u).onSnapshot(s => {
     if (!s.exists || s.metadata.hasPendingWrites) return; const r = s.data(); if (!r) return;
-    for (const [k, v] of Object.entries(r.daily || {})) if ((S.P.daily[k] || 0) < v) S.P.daily[k] = v;
-    for (const [k, v] of Object.entries(r.lessons || {})) if (!S.P.lessons[k] || S.P.lessons[k].s < v.s) S.P.lessons[k] = v;
-    for (const [k, v] of Object.entries(r.badges || {})) S.P.badges[k] = Math.max(S.P.badges[k] || 0, v);
+    if (mergeProgress(r)) { savePub(); updateTop(); if (['home', 'learn', 'track', 'review'].includes(S.view)) render({ keepScroll: true }); }
   }, () => { });
   if (S.cap.room) {
     const room = S.cap.room;
@@ -2356,6 +2395,11 @@ async function enterAs(u, isNew) {
   S.P = Object.assign(dp, prog || {}); S.P.settings = Object.assign(defaultProg().settings, (prog && prog.settings) || {});
   S.srs = (srs && srs.cards) || {};
   S.pub = Object.assign(defaultPub(S.me), pub || {}); S.pub.name = a.name; S.pub.av = a.av; if (!S.pub.blitz) S.pub.blitz = { best: 0, wk: {} };
+  // dữ liệu cũ: phần XP chưa có trong lịch sử theo ngày được giữ lại ở xpBase
+  const sumDaily = Object.values(S.P.daily || {}).reduce((a, b) => a + b, 0);
+  if ((S.pub.xp || 0) > sumDaily + (S.P.xpBase || 0)) S.P.xpBase = S.pub.xp - sumDaily;
+  if (S.local === false) { const cached = LS.get('doc:progress/' + u, null); if (cached && cached !== prog) mergeProgress(cached); }
+  derivePub(); AIC = null;
   if (!pub) savePub();
   if (!prog) saveProg();
   if (S.P.level >= 3) ensureUpper().catch(() => { });

@@ -1,5 +1,5 @@
 // Service worker: cho phép cài lên màn hình chính và mở nhanh, dùng được bài học khi mạng yếu.
-const CACHE = 'hanngu-202610271939';
+const CACHE = 'hanngu-202610271954';
 const CORE = ['./', 'index.html', 'config.js', 'platform.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'data/core.json', 'vendor/pinyin-pro.js', 'vendor/hanzi-writer.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
